@@ -1,0 +1,90 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "Noto Sans SC", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #f8f6f3;
+  color: #1a1d21;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-card border border-industrial-100 transition-all duration-300;
+  }
+  .card:hover {
+    @apply shadow-card-hover;
+  }
+  .btn-primary {
+    @apply px-4 py-2.5 bg-kiln-500 text-white font-medium rounded-lg hover:bg-kiln-600 active:bg-kiln-700 transition-all duration-200 shadow-sm hover:shadow-md;
+  }
+  .btn-secondary {
+    @apply px-4 py-2.5 bg-white text-industrial-700 font-medium rounded-lg border border-industrial-200 hover:bg-industrial-50 active:bg-industrial-100 transition-all duration-200;
+  }
+  .btn-gold {
+    @apply px-4 py-2.5 bg-gold-400 text-industrial-900 font-medium rounded-lg hover:bg-gold-500 active:bg-gold-600 transition-all duration-200 shadow-sm;
+  }
+  .input-field {
+    @apply w-full px-3 py-2.5 bg-white border border-industrial-200 rounded-lg text-sm text-industrial-900 placeholder-industrial-400 focus:outline-none focus:ring-2 focus:ring-kiln-500/30 focus:border-kiln-500 transition-all duration-200;
+  }
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-industrial-500 hover:text-kiln-600 hover:bg-kiln-50 transition-all duration-200 cursor-pointer;
+  }
+  .nav-item-active {
+    @apply bg-gradient-to-r from-kiln-500 to-kiln-600 text-white hover:text-white hover:from-kiln-600 hover:to-kiln-700 shadow-md;
+  }
+  .section-title {
+    @apply font-display text-xl font-semibold text-industrial-900;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .stat-value {
+    @apply font-display text-3xl font-bold text-industrial-900;
+  }
+  .table-th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-industrial-500 uppercase tracking-wider bg-industrial-50;
+  }
+  .table-td {
+    @apply px-4 py-3 text-sm text-industrial-700 whitespace-nowrap;
+  }
+  .temp-gradient {
+    background: linear-gradient(
+      90deg,
+      #3b82f6 0%,
+      #22c55e 20%,
+      #eab308 40%,
+      #f97316 60%,
+      #ef4444 80%,
+      #dc2626 100%
+    );
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #c7c7c7;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+}
