@@ -39,6 +39,8 @@ export default function KilnFiring() {
   const maxTemp = params.find((p) => p.key === 'maxTemp')?.value ?? 1230;
   const kilnSpeed = params.find((p) => p.key === 'kilnSpeed')?.value ?? 9.6;
   const oxygenLevel = params.find((p) => p.key === 'oxygenLevel')?.value ?? 3.2;
+  const firingTime = params.find((p) => p.key === 'firingTime')?.value ?? 62.5;
+  const airFuelRatio = params.find((p) => p.key === 'airFuelRatio')?.value ?? 10.8;
 
   const handleSliderChange = (key: string, value: number) => {
     setParams((prev) =>
@@ -197,6 +199,8 @@ export default function KilnFiring() {
         maxTemp={maxTemp}
         kilnSpeed={kilnSpeed}
         oxygenLevel={oxygenLevel}
+        firingTime={firingTime}
+        airFuelRatio={airFuelRatio}
         showChangeIndicator
         onReset={handleReset}
       />

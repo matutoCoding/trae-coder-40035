@@ -9,6 +9,7 @@ import KilnFiring from "@/pages/KilnFiring";
 import Polishing from "@/pages/Polishing";
 import GradingPackaging from "@/pages/GradingPackaging";
 import BatchTracking from "@/pages/BatchTracking";
+import QualityAnalysis from "@/pages/QualityAnalysis";
 
 export default function App() {
   const { activeModule } = useAppStore();
@@ -33,6 +34,8 @@ export default function App() {
         return <GradingPackaging />;
       case "batch-tracking":
         return <BatchTracking />;
+      case "quality-analysis":
+        return <QualityAnalysis />;
       default:
         return <Dashboard />;
     }

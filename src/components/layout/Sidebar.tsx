@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Factory,
   GitBranch,
+  BarChart3,
 } from "lucide-react";
 import { useAppStore } from "../../store/productionStore";
 import type { ModuleKey } from "../../types";
@@ -25,6 +26,7 @@ const navItems: { key: ModuleKey; label: string; icon: typeof LayoutDashboard; a
   { key: "polishing", label: "抛光磨边", icon: Sparkles, accent: "from-violet-500 to-violet-600" },
   { key: "grading-packaging", label: "分级包装", icon: Boxes, accent: "from-emerald-500 to-emerald-600" },
   { key: "batch-tracking", label: "批次追溯", icon: GitBranch, accent: "from-gold-500 to-gold-600" },
+  { key: "quality-analysis", label: "质量分析", icon: BarChart3, accent: "from-rose-500 to-pink-600" },
 ];
 
 export default function Sidebar() {

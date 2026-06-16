@@ -75,12 +75,14 @@ export const formulas: Formula[] = [
   },
 ];
 
+const unifiedBatchNos = ["B20260617-0001", "B20260617-0002", "B20260617-0003", "B20260617-0004", "B20260617-0005"];
+
 export const ballMillingRecords: BallMillingRecord[] = Array.from({ length: 12 }).map((_, i) => ({
   id: generateId(),
   timestamp: randomDate(48),
   shift: shifts[i % 2],
   operator: operators[i % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   formulaId: formulas[i % formulas.length].id,
   formulaName: formulas[i % formulas.length].name,
   recipe: formulas[i % formulas.length].recipe,
@@ -100,7 +102,7 @@ export const sprayDryingRecords: SprayDryingRecord[] = Array.from({ length: 10 }
   timestamp: randomDate(36),
   shift: shifts[i % 2],
   operator: operators[(i + 1) % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   towerId: `SD-${201 + (i % 2)}`,
   inletTemp: 520 + Math.random() * 40,
   outletTemp: 90 + Math.random() * 15,
@@ -118,7 +120,7 @@ export const pressFormingRecords: PressFormingRecord[] = Array.from({ length: 15
   timestamp: randomDate(24),
   shift: shifts[i % 2],
   operator: operators[(i + 2) % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   pressId: `PR-${301 + (i % 6)}`,
   moldSpec: ["800×800", "600×1200", "600×600", "750×1500"][i % 4],
   pressure: 280 + Math.random() * 80,
@@ -137,7 +139,7 @@ export const glazingRecords: GlazingRecord[] = Array.from({ length: 10 }).map((_
   timestamp: randomDate(20),
   shift: shifts[i % 2],
   operator: operators[(i + 3) % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   dryerTemp: [120, 160, 190, 210, 200, 170].map((t) => t + Math.random() * 20),
   dryingTime: 45 + Math.random() * 20,
   glazeDensity: 1.45 + Math.random() * 0.15,
@@ -155,7 +157,7 @@ export const kilnFiringRecords: KilnFiringRecord[] = Array.from({ length: 8 }).m
   timestamp: randomDate(16),
   shift: shifts[i % 2],
   operator: operators[(i + 4) % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   kilnId: `K-${1}`,
   zoneTemps: Array.from({ length: 12 }, (_, j) => {
     if (j < 3) return 300 + j * 150 + Math.random() * 30;
@@ -178,7 +180,7 @@ export const polishingRecords: PolishingRecord[] = Array.from({ length: 10 }).ma
   timestamp: randomDate(12),
   shift: shifts[i % 2],
   operator: operators[(i + 5) % operators.length],
-  batchNo: batchNo(),
+  batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
   polishingHeadConfig: `${8 + (i % 3)}组磨头`,
   polishingSpeed: 4 + Math.random() * 3,
   feedRate: 12 + Math.random() * 6,
@@ -190,15 +192,22 @@ export const polishingRecords: PolishingRecord[] = Array.from({ length: 10 }).ma
   surfaceFlatness: 0.1 + Math.random() * 0.2,
 }));
 
+const presetGrades: ("A" | "B" | "C" | "D")[] = ["A", "A", "B", "C", "D"];
+
 export const gradingRecords: GradingRecord[] = Array.from({ length: 14 }).map((_, i) => {
-  const gradeRoll = Math.random();
-  const grade = gradeRoll < 0.7 ? "A" : gradeRoll < 0.88 ? "B" : gradeRoll < 0.97 ? "C" : "D";
+  let grade: "A" | "B" | "C" | "D";
+  if (i < 5) {
+    grade = presetGrades[i];
+  } else {
+    const gradeRoll = Math.random();
+    grade = gradeRoll < 0.7 ? "A" : gradeRoll < 0.88 ? "B" : gradeRoll < 0.97 ? "C" : "D";
+  }
   return {
     id: generateId(),
     timestamp: randomDate(10),
     shift: shifts[i % 2],
     operator: operators[i % operators.length],
-    batchNo: batchNo(),
+    batchNo: i < 5 ? unifiedBatchNos[i] : batchNo(),
     flatness: 0.05 + Math.random() * 0.25,
     squareness: 0.1 + Math.random() * 0.3,
     edgeStraightness: 0.08 + Math.random() * 0.2,

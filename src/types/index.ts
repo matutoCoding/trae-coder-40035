@@ -153,4 +153,5 @@ export type ModuleKey =
   | "kiln-firing"
   | "polishing"
   | "grading-packaging"
-  | "batch-tracking";
+  | "batch-tracking"
+  | "quality-analysis";

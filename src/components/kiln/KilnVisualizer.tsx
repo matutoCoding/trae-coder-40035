@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -7,13 +8,15 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-} from "recharts";
-import { RotateCcw } from "lucide-react";
+} from 'recharts';
+import { RotateCcw } from 'lucide-react';
 
 interface KilnVisualizerProps {
   maxTemp?: number;
   kilnSpeed?: number;
   oxygenLevel?: number;
+  firingTime?: number;
+  airFuelRatio?: number;
   showChangeIndicator?: boolean;
   onReset?: () => void;
 }
@@ -21,53 +24,90 @@ interface KilnVisualizerProps {
 const defaultMaxTemp = 1230;
 const defaultKilnSpeed = 9.6;
 const defaultOxygen = 3.2;
+const defaultFiringTime = 62.5;
+const defaultAirFuel = 10.8;
 
 function tempToColor(temp: number, type: string): string {
-  if (type === "preheat") {
-    if (temp < 400) return "from-blue-400 to-cyan-400";
-    if (temp < 700) return "from-cyan-400 to-green-400";
-    return "from-green-400 to-lime-400";
+  if (type === 'preheat') {
+    if (temp < 400) return 'from-blue-400 to-cyan-400';
+    if (temp < 700) return 'from-cyan-400 to-green-400';
+    return 'from-green-400 to-lime-400';
   }
-  if (type === "firing") {
-    if (temp < 1150) return "from-amber-400 to-orange-400";
-    if (temp < 1230) return "from-orange-500 to-kiln-500";
-    return "from-kiln-500 to-kiln-700";
+  if (type === 'firing') {
+    if (temp < 1150) return 'from-amber-400 to-orange-400';
+    if (temp < 1230) return 'from-orange-500 to-kiln-500';
+    return 'from-kiln-500 to-kiln-700';
   }
-  if (temp > 500) return "from-lime-400 to-green-400";
-  if (temp > 200) return "from-green-400 to-cyan-400";
-  return "from-cyan-400 to-blue-400";
+  if (temp > 500) return 'from-lime-400 to-green-400';
+  if (temp > 200) return 'from-green-400 to-cyan-400';
+  return 'from-cyan-400 to-blue-400';
 }
 
-function calcZoneTemps(maxTemp: number, kilnSpeed: number, oxygenLevel: number) {
+function seedRand(seed: number): () => number {
+  let t = seed >>> 0;
+  return function () {
+    t = (t + 0x6D2B79F5) >>> 0;
+    let r = t;
+    r = Math.imul(r ^ (r >>> 15), r | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function calcZoneTemps(
+  maxTemp: number,
+  kilnSpeed: number,
+  oxygenLevel: number,
+  firingTime: number,
+  airFuelRatio: number
+) {
+  const seed =
+    Math.round(maxTemp * 1000) +
+    Math.round(kilnSpeed * 100) +
+    Math.round(oxygenLevel * 10) +
+    Math.round(firingTime * 10) +
+    Math.round(airFuelRatio * 100);
+  const rand = seedRand(seed);
+
   const baseMax = 1230;
   const tempRatio = maxTemp / baseMax;
   const speedFactor = kilnSpeed / 9.6;
 
+  const timeFactor = firingTime / 62.5;
+  const preheatBoost = timeFactor > 1 ? (timeFactor - 1) * 18 : (timeFactor - 1) * 22;
+  const coolingSlow = timeFactor > 1 ? (timeFactor - 1) * 25 : 0;
+  const firingFlat = Math.abs(timeFactor - 1) < 0.1 ? 0 : (timeFactor - 1) * 12;
+
   const zones = [
-    { zone: 1, name: "Z1预热", type: "preheat" as const, set: 350 },
-    { zone: 2, name: "Z2预热", type: "preheat" as const, set: 550 },
-    { zone: 3, name: "Z3预热", type: "preheat" as const, set: 780 },
-    { zone: 4, name: "Z4烧成", type: "firing" as const, set: 1050 },
-    { zone: 5, name: "Z5烧成", type: "firing" as const, set: 1180 },
-    { zone: 6, name: "Z6烧成", type: "firing" as const, set: maxTemp },
-    { zone: 7, name: "Z7烧成", type: "firing" as const, set: maxTemp - 15 },
-    { zone: 8, name: "Z8烧成", type: "firing" as const, set: 1150 },
-    { zone: 9, name: "Z9急冷", type: "cooling" as const, set: 850 },
-    { zone: 10, name: "Z10缓冷", type: "cooling" as const, set: 600 },
-    { zone: 11, name: "Z11末冷", type: "cooling" as const, set: 320 },
-    { zone: 12, name: "Z12出口", type: "cooling" as const, set: 80 },
+    { zone: 1, name: 'Z1预热', type: 'preheat' as const, set: 350 + preheatBoost * 0.9 },
+    { zone: 2, name: 'Z2预热', type: 'preheat' as const, set: 550 + preheatBoost * 0.8 },
+    { zone: 3, name: 'Z3预热', type: 'preheat' as const, set: 780 + preheatBoost * 0.6 },
+    { zone: 4, name: 'Z4烧成', type: 'firing' as const, set: 1050 + firingFlat * 0.5 },
+    { zone: 5, name: 'Z5烧成', type: 'firing' as const, set: 1180 + firingFlat * 0.8 },
+    { zone: 6, name: 'Z6烧成', type: 'firing' as const, set: maxTemp + firingFlat },
+    { zone: 7, name: 'Z7烧成', type: 'firing' as const, set: maxTemp - 15 + firingFlat * 0.8 },
+    { zone: 8, name: 'Z8烧成', type: 'firing' as const, set: 1150 + firingFlat * 0.4 },
+    { zone: 9, name: 'Z9急冷', type: 'cooling' as const, set: 850 + coolingSlow * 0.7 },
+    { zone: 10, name: 'Z10缓冷', type: 'cooling' as const, set: 600 + coolingSlow * 0.9 },
+    { zone: 11, name: 'Z11末冷', type: 'cooling' as const, set: 320 + coolingSlow },
+    { zone: 12, name: 'Z12出口', type: 'cooling' as const, set: 80 + coolingSlow * 0.5 },
   ];
 
-  const oxygenBias = (oxygenLevel - 3.2) * 8;
-  const speedBias = (1 - speedFactor) * 25;
+  const oxygenBias = (oxygenLevel - 3.2) * 7;
+  const speedBias = (1 - speedFactor) * 22;
+  const fuelBias = (airFuelRatio - 10.8) * -6;
 
   return zones.map((z) => {
-    let actual = z.set * tempRatio + speedBias + oxygenBias * (z.type === "firing" ? 1 : 0.3);
-    actual = actual + (Math.random() - 0.5) * 6;
+    let actual =
+      z.set * tempRatio +
+      speedBias +
+      oxygenBias * (z.type === 'firing' ? 1 : 0.3) +
+      fuelBias * (z.type === 'firing' ? 1 : 0.2);
+    actual = actual + (rand() - 0.5) * 5;
 
-    let status: "normal" | "high" | "low" = "normal";
-    if (actual > z.set * 1.03) status = "high";
-    if (actual < z.set * 0.97) status = "low";
+    let status: 'normal' | 'high' | 'low' = 'normal';
+    if (actual > z.set * 1.03) status = 'high';
+    if (actual < z.set * 0.97) status = 'low';
 
     return { ...z, actual: Math.round(actual), status };
   });
@@ -77,24 +117,58 @@ export default function KilnVisualizer({
   maxTemp = defaultMaxTemp,
   kilnSpeed = defaultKilnSpeed,
   oxygenLevel = defaultOxygen,
+  firingTime = defaultFiringTime,
+  airFuelRatio = defaultAirFuel,
   showChangeIndicator = false,
   onReset,
 }: KilnVisualizerProps) {
-  const zones = calcZoneTemps(maxTemp, kilnSpeed, oxygenLevel);
-  const chartData = zones.map((z) => ({
-    name: z.name.replace("Z", ""),
-    设定: z.set,
-    实际: z.actual,
-  }));
+  const zones = useMemo(
+    () => calcZoneTemps(maxTemp, kilnSpeed, oxygenLevel, firingTime, airFuelRatio),
+    [maxTemp, kilnSpeed, oxygenLevel, firingTime, airFuelRatio]
+  );
+
+  const chartData = useMemo(
+    () =>
+      zones.map((z) => ({
+        name: z.name.replace('Z', ''),
+        设定: Math.round(z.set),
+        实际: z.actual,
+      })),
+    [zones]
+  );
 
   const actualMax = Math.max(...zones.map((z) => z.actual));
-  const firingTime = (280 / kilnSpeed).toFixed(1);
-  const energyIndex = (maxTemp / 1230) * (kilnSpeed / 9.6) * 3.2;
+
+  const energyBase = 3.2;
+  const energyIndex =
+    (maxTemp / 1230) * 0.35 +
+    (firingTime / 62.5) * 0.4 +
+    (kilnSpeed / 9.6) * 0.15 +
+    (1 / airFuelRatio) * 8.64;
+  const energyDelta = ((energyIndex - energyBase) / energyBase) * 100;
 
   const isDifferent =
     maxTemp !== defaultMaxTemp ||
     kilnSpeed !== defaultKilnSpeed ||
-    oxygenLevel !== defaultOxygen;
+    oxygenLevel !== defaultOxygen ||
+    firingTime !== defaultFiringTime ||
+    airFuelRatio !== defaultAirFuel;
+
+  const defectRisk =
+    (maxTemp > 1245 ? 25 : 0) +
+    (firingTime < 55 ? 20 : firingTime > 75 ? 15 : 0) +
+    (Math.abs(kilnSpeed - 9.6) > 2.5 ? 18 : 0) +
+    (oxygenLevel > 5 ? 10 : 0);
+
+  const strengthGain =
+    (maxTemp > 1235 ? 10 : 0) +
+    (firingTime > 68 ? 12 : 0) +
+    (Math.abs(oxygenLevel - 3.2) < 0.8 ? 5 : 0);
+
+  const uniformityScore =
+    (firingTime > 60 ? 10 : 0) +
+    (Math.abs(kilnSpeed - 9.6) < 1 ? 8 : 0) +
+    (maxTemp <= 1245 ? 7 : 0);
 
   return (
     <div className="card p-5 relative overflow-hidden">
@@ -151,7 +225,6 @@ export default function KilnVisualizer({
 
         {/* 温区条 */}
         <div className="relative h-28 rounded-2xl overflow-hidden border-2 border-industrial-900/10 bg-industrial-900 shadow-inner">
-          {/* 背景砖纹 */}
           <div
             className="absolute inset-0 opacity-20"
             style={{
@@ -164,15 +237,15 @@ export default function KilnVisualizer({
             {zones.map((zone, idx) => {
               const flexBasis = `${100 / 12}%`;
               const color = tempToColor(zone.actual, zone.type);
-              const isHigh = zone.status === "high";
-              const isLow = zone.status === "low";
+              const isHigh = zone.status === 'high';
+              const isLow = zone.status === 'low';
 
               return (
                 <div
                   key={zone.zone}
                   className={`relative h-full bg-gradient-to-b ${color} transition-all duration-700 ease-out ${
-                    isHigh ? "ring-2 ring-kiln-400 ring-offset-1 ring-offset-industrial-900 z-10" : ""
-                  } ${isLow ? "ring-2 ring-blue-400 ring-offset-1 ring-offset-industrial-900 z-10" : ""}`}
+                    isHigh ? 'ring-2 ring-kiln-400 ring-offset-1 ring-offset-industrial-900 z-10' : ''
+                  } ${isLow ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-industrial-900 z-10' : ''}`}
                   style={{ flex: `1 1 ${flexBasis}` }}
                 >
                   <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-white/20 to-transparent" />
@@ -185,12 +258,12 @@ export default function KilnVisualizer({
                   <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
                     <div
                       className={`font-display font-bold text-white drop-shadow-lg ${
-                        zone.actual > 1000 ? "text-xl" : "text-base"
-                      } ${isHigh || isLow ? "animate-pulse" : ""}`}
+                        zone.actual > 1000 ? 'text-xl' : 'text-base'
+                      } ${isHigh || isLow ? 'animate-pulse' : ''}`}
                     >
                       {zone.actual}°
                     </div>
-                    <div className="text-[9px] text-white/80 -mt-0.5">/{zone.set}</div>
+                    <div className="text-[9px] text-white/80 -mt-0.5">/{Math.round(zone.set)}</div>
                   </div>
 
                   <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-white/50" />
@@ -232,33 +305,33 @@ export default function KilnVisualizer({
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#EDEAE4" />
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#6B6255" }} />
-            <YAxis tick={{ fontSize: 10, fill: "#6B6255" }} domain={[0, 1400]} tickLine={false} />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6B6255' }} />
+            <YAxis tick={{ fontSize: 10, fill: '#6B6255' }} domain={[0, 1400]} tickLine={false} />
             <Tooltip
               contentStyle={{
-                background: "#1A1D21",
-                border: "none",
-                borderRadius: "10px",
-                color: "#fff",
-                fontSize: "12px",
+                background: '#1A1D21',
+                border: 'none',
+                borderRadius: '10px',
+                color: '#fff',
+                fontSize: '12px',
               }}
-              labelStyle={{ color: "#D4A547", fontWeight: 600 }}
+              labelStyle={{ color: '#D4A547', fontWeight: 600 }}
             />
-            <ReferenceLine y={1250} stroke="#C8381F" strokeDasharray="3 3" strokeWidth={1} />
+            <ReferenceLine y={1250} stroke="#C8381F" strokeDasharray="3 3" strokeWidth={1} label={{ value: '上限', fill: '#C8381F', fontSize: 10, position: 'right' }} />
             <Line
               type="monotone"
               dataKey="设定"
               stroke="#374151"
               strokeDasharray="5 5"
               strokeWidth={1.5}
-              dot={{ r: 3, fill: "#fff", stroke: "#374151", strokeWidth: 2 }}
+              dot={{ r: 3, fill: '#fff', stroke: '#374151', strokeWidth: 2 }}
             />
             <Line
               type="monotone"
               dataKey="实际"
               stroke="url(#tempLine)"
               strokeWidth={3}
-              dot={{ r: 4, fill: "#fff", stroke: "#C8381F", strokeWidth: 2 }}
+              dot={{ r: 4, fill: '#fff', stroke: '#C8381F', strokeWidth: 2 }}
               activeDot={{ r: 7 }}
             />
             <defs>
@@ -277,58 +350,55 @@ export default function KilnVisualizer({
       <div className="grid grid-cols-4 gap-3 mt-5 pt-4 border-t border-industrial-100">
         {[
           {
-            label: "窑速",
+            label: '窑速',
             value: kilnSpeed.toFixed(1),
-            unit: "m/min",
-            icon: "⚡",
+            unit: 'm/min',
+            icon: '⚡',
             change: kilnSpeed !== defaultKilnSpeed ? (kilnSpeed - defaultKilnSpeed).toFixed(1) : null,
           },
           {
-            label: "最高温度",
+            label: '最高温度',
             value: String(actualMax),
-            unit: "°C",
-            icon: "🔥",
+            unit: '°C',
+            icon: '🔥',
             alert: actualMax > 1250,
             change: maxTemp !== defaultMaxTemp ? (maxTemp - defaultMaxTemp).toString() : null,
           },
           {
-            label: "烧成周期",
-            value: firingTime,
-            unit: "min",
-            icon: "⏱️",
-            change:
-              kilnSpeed !== defaultKilnSpeed
-                ? (parseFloat(firingTime) - 280 / 9.6).toFixed(1)
-                : null,
+            label: '烧成周期',
+            value: firingTime.toFixed(1),
+            unit: 'min',
+            icon: '⏱️',
+            change: firingTime !== defaultFiringTime ? (firingTime - defaultFiringTime).toFixed(1) : null,
           },
           {
-            label: "氧含量",
+            label: '氧含量',
             value: oxygenLevel.toFixed(1),
-            unit: "%",
-            icon: "💨",
+            unit: '%',
+            icon: '💨',
             change: oxygenLevel !== defaultOxygen ? (oxygenLevel - defaultOxygen).toFixed(1) : null,
           },
         ].map((p) => (
           <div
             key={p.label}
             className={`rounded-xl p-3 text-center relative ${
-              p.alert ? "bg-kiln-50 border border-kiln-200" : "bg-industrial-50"
+              p.alert ? 'bg-kiln-50 border border-kiln-200' : 'bg-industrial-50'
             }`}
           >
             {p.change !== null && (
               <span
                 className={`absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${
                   parseFloat(p.change) > 0
-                    ? "bg-kiln-100 text-kiln-700"
-                    : "bg-emerald-100 text-emerald-700"
+                    ? 'bg-kiln-100 text-kiln-700'
+                    : 'bg-emerald-100 text-emerald-700'
                 }`}
               >
-                {parseFloat(p.change) > 0 ? "▲" : "▼"}
+                {parseFloat(p.change) > 0 ? '▲' : '▼'}
                 {Math.abs(parseFloat(p.change))}
               </span>
             )}
             <div className="text-xl mb-1">{p.icon}</div>
-            <div className={`font-display text-xl font-bold ${p.alert ? "text-kiln-600" : "text-industrial-800"}`}>
+            <div className={`font-display text-xl font-bold ${p.alert ? 'text-kiln-600' : 'text-industrial-800'}`}>
               {p.value}
               <span className="text-xs font-normal text-industrial-500 ml-1">{p.unit}</span>
             </div>
@@ -338,29 +408,69 @@ export default function KilnVisualizer({
       </div>
 
       {/* 工艺状态评估 */}
-      {isDifferent && (
-        <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-gold-50 to-kiln-50 border border-gold-200">
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gold-100 flex items-center justify-center text-gold-700 flex-shrink-0">
-              📊
+      <div
+        className={`mt-4 p-4 rounded-xl border ${
+          isDifferent
+            ? 'bg-gradient-to-r from-gold-50 to-kiln-50 border-gold-200'
+            : 'bg-gradient-to-r from-emerald-50 to-blue-50 border-emerald-200'
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            isDifferent ? 'bg-gold-100 text-gold-700' : 'bg-emerald-100 text-emerald-700'
+          }`}>
+            📊
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-industrial-800">
+              {isDifferent ? '工艺调整仿真预测' : '当前工艺状态'}
             </div>
-            <div className="flex-1">
-              <div className="text-sm font-semibold text-industrial-800">工艺调整预测</div>
-              <div className="text-xs text-industrial-600 mt-1">
-                根据当前参数调整，预计
-                <span className="font-bold text-kiln-600 mx-1">
-                  {energyIndex > 3.2 ? "单位能耗上升" : "单位能耗下降"} {Math.abs(Math.round((energyIndex - 3.2) * 100 / 3.2))}%
-                </span>
-                ，
-                <span className="font-bold text-emerald-600 mx-1">
-                  {actualMax > 1240 ? "烧成更充分，强度提升" : "烧成温和，变形风险降低"}
-                </span>
-                。建议监控色差和变形指标。
+            <div className="grid grid-cols-3 gap-3 mt-2 mb-2">
+              <div className="px-3 py-2 rounded-lg bg-white/70 border border-white">
+                <div className="text-[10px] text-industrial-500">能耗变化</div>
+                <div className={`text-sm font-bold ${energyDelta > 0 ? 'text-kiln-600' : 'text-emerald-600'}`}>
+                  {energyDelta > 0 ? '+' : ''}{energyDelta.toFixed(1)}%
+                </div>
               </div>
+              <div className="px-3 py-2 rounded-lg bg-white/70 border border-white">
+                <div className="text-[10px] text-industrial-500">强度提升</div>
+                <div className="text-sm font-bold text-gold-600">+{strengthGain}</div>
+              </div>
+              <div className="px-3 py-2 rounded-lg bg-white/70 border border-white">
+                <div className="text-[10px] text-industrial-500">缺陷风险</div>
+                <div className={`text-sm font-bold ${defectRisk > 30 ? 'text-kiln-600' : defectRisk > 15 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  {defectRisk}分
+                </div>
+              </div>
+            </div>
+            <div className="text-xs text-industrial-600 leading-relaxed">
+              {isDifferent ? (
+                <>
+                  根据当前参数调整，预计
+                  <span className={`font-bold mx-1 ${energyDelta > 0 ? 'text-kiln-600' : 'text-emerald-600'}`}>
+                    单位能耗{energyDelta > 0 ? '上升' : '下降'} {Math.abs(energyDelta).toFixed(1)}%
+                  </span>
+                  ，
+                  {firingTime > 68 ? (
+                    <span className="font-bold text-gold-600 mx-1">烧成周期延长，产品致密性提升，强度+{strengthGain}</span>
+                  ) : firingTime < 58 ? (
+                    <span className="font-bold text-kiln-600 mx-1">周期偏短，升温速率过快，变形风险{defectRisk}分</span>
+                  ) : maxTemp > 1245 ? (
+                    <span className="font-bold text-kiln-600 mx-1">峰值温度过高，色差与气泡风险上升</span>
+                  ) : (
+                    <span className="font-bold text-emerald-600 mx-1">烧成均匀性{uniformityScore}/25分，工艺窗口合理</span>
+                  )}
+                  。
+                </>
+              ) : (
+                <>
+                  当前处于标准工艺窗口，温度分布均匀，建议关注氧含量稳定在 3.0%-3.5% 区间可进一步降低色差波动。
+                </>
+              )}
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

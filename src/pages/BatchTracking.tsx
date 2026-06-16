@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import {
   FlaskConical,
@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Package,
   Activity,
+  X,
+  Info,
 } from 'lucide-react';
 import {
   ballMillingRecords,
@@ -224,6 +226,8 @@ function getBatchProcessData(batchNo: string): ProcessStep[] {
   return steps;
 }
 
+const processOrder = ['ball-milling', 'spray-drying', 'press-forming', 'glazing', 'kiln-firing', 'polishing', 'grading'];
+
 function getAllBatchNos(): string[] {
   const set = new Set<string>();
   ballMillingRecords.forEach((r) => set.add(r.batchNo));
@@ -236,10 +240,20 @@ function getAllBatchNos(): string[] {
   return Array.from(set).sort();
 }
 
+function getCompleteBatchNos(): string[] {
+  const allBatches = getAllBatchNos();
+  return allBatches.filter((batch) => {
+    const steps = getBatchProcessData(batch);
+    return steps.length === 7;
+  });
+}
+
 export default function BatchTracking() {
   const allBatches = getAllBatchNos();
+  const completeBatches = getCompleteBatchNos();
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedBatch, setSelectedBatch] = useState<string>(allBatches[0] || '');
+  const [selectedBatch, setSelectedBatch] = useState<string>(completeBatches[0] || allBatches[0] || '');
+  const [highlightStep, setHighlightStep] = useState<string | null>(null);
 
   const filteredBatches = useMemo(() => {
     if (!searchTerm) return allBatches;
@@ -357,6 +371,15 @@ export default function BatchTracking() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {highlightStep && (
+                  <button
+                    onClick={() => setHighlightStep(null)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gold-50 border border-gold-300 text-gold-700 text-xs font-medium hover:bg-gold-100 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    清除高亮
+                  </button>
+                )}
                 <div className="text-right">
                   <div className="text-xs text-industrial-500">整体进度</div>
                   <div className="font-display text-xl font-bold text-kiln-600">
@@ -392,7 +415,7 @@ export default function BatchTracking() {
           </div>
 
           {/* 流转时间轴 */}
-          <div className="card p-5">
+          <div className="card p-5" onClick={(e) => { if (e.target === e.currentTarget) setHighlightStep(null); }}>
             <h3 className="font-display text-lg font-semibold text-industrial-900 mb-5">工序流转详情</h3>
             <div className="space-y-4">
               {processStages.map((stage, idx) => {
@@ -402,21 +425,51 @@ export default function BatchTracking() {
                 const isLast = idx === processStages.length - 1;
                 const hasAbnormal = step?.abnormalities && step.abnormalities.length > 0;
 
+                const highlightIndex = highlightStep ? processOrder.indexOf(highlightStep) : -1;
+                const currentIndex = processOrder.indexOf(stage.key);
+                const isHighlighted = highlightIndex >= 0 && currentIndex <= highlightIndex;
+                const isDimmed = highlightIndex >= 0 && currentIndex > highlightIndex;
+
                 return (
-                  <div key={stage.key} className="relative flex gap-4">
+                  <div
+                    key={stage.key}
+                    className={`relative flex gap-4 rounded-xl p-3 -mx-3 transition-all duration-300 ${
+                      isHighlighted
+                        ? 'bg-gold-50/70 border-2 border-gold-300 shadow-sm'
+                        : isDimmed
+                        ? 'opacity-50'
+                        : ''
+                    }`}
+                  >
+                    {/* 可能影响质量 badge */}
+                    {isHighlighted && (
+                      <div className="absolute -top-2.5 right-4 z-20">
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gold-400 text-white text-[10px] font-medium shadow-sm">
+                          <Info className="w-3 h-3" />
+                          可能影响此质量
+                        </span>
+                      </div>
+                    )}
+
                     {/* 连接线 */}
                     {!isLast && (
-                      <div className="absolute left-[22px] top-12 bottom-0 w-px bg-gradient-to-b from-industrial-200 to-industrial-100" />
+                      <div className={`absolute left-[34px] top-14 bottom-0 w-px z-0 ${
+                        isHighlighted && currentIndex < highlightIndex
+                          ? 'bg-gradient-to-b from-gold-300 to-gold-200'
+                          : 'bg-gradient-to-b from-industrial-200 to-industrial-100'
+                      }`} />
                     )}
 
                     {/* 节点图标 */}
                     <div className="relative z-10 flex-shrink-0">
                       <div
-                        className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+                        className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 ${
                           isActive
                             ? `${stage.bg} text-white shadow-md`
                             : 'bg-industrial-100 text-industrial-400'
-                        } ${hasAbnormal ? 'ring-2 ring-kiln-400 ring-offset-2' : ''}`}
+                        } ${hasAbnormal ? 'ring-2 ring-kiln-400 ring-offset-2' : ''} ${
+                          isHighlighted ? 'ring-2 ring-gold-400 ring-offset-2 animate-pulse' : ''
+                        }`}
                       >
                         <StageIcon className="w-5 h-5" />
                       </div>
@@ -436,9 +489,19 @@ export default function BatchTracking() {
                     <div className="flex-1 pb-6">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <h4 className={`font-semibold ${isActive ? 'text-industrial-800' : 'text-industrial-400'}`}>
+                          <button
+                            onClick={() => isActive && setHighlightStep(highlightStep === stage.key ? null : stage.key)}
+                            disabled={!isActive}
+                            className={`font-semibold transition-colors ${
+                              isActive
+                                ? highlightStep === stage.key
+                                  ? 'text-gold-700 cursor-pointer hover:text-gold-800'
+                                  : 'text-industrial-800 cursor-pointer hover:text-kiln-600'
+                                : 'text-industrial-400 cursor-default'
+                            }`}
+                          >
                             {stage.name}
-                          </h4>
+                          </button>
                           {step?.status === 'completed' && (
                             <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">
                               已完成
@@ -474,7 +537,11 @@ export default function BatchTracking() {
                           {step.params.map((p) => (
                             <div
                               key={p.label}
-                              className="px-3 py-2 rounded-lg bg-industrial-50/80 border border-industrial-100"
+                              className={`px-3 py-2 rounded-lg border transition-colors ${
+                                isHighlighted
+                                  ? 'bg-white/70 border-gold-200'
+                                  : 'bg-industrial-50/80 border-industrial-100'
+                              }`}
                             >
                               <div className="text-[10px] text-industrial-500">{p.label}</div>
                               <div className="text-sm font-semibold text-industrial-800 mt-0.5">{p.value}</div>
@@ -486,21 +553,23 @@ export default function BatchTracking() {
                       {hasAbnormal && step.abnormalities && (
                         <div className="mt-3 space-y-2">
                           {step.abnormalities.map((ab, i) => (
-                            <div
+                            <button
                               key={i}
-                              className={`flex items-start gap-2 px-3 py-2 rounded-lg border ${
+                              onClick={() => setHighlightStep(highlightStep === stage.key ? null : stage.key)}
+                              className={`w-full flex items-start gap-2 px-3 py-2 rounded-lg border text-left cursor-pointer transition-all hover:shadow-md ${
                                 ab.level === 'critical'
-                                  ? 'bg-rose-50 border-rose-200'
-                                  : 'bg-amber-50 border-amber-200'
-                              }`}
+                                  ? 'bg-rose-50 border-rose-200 hover:bg-rose-100'
+                                  : 'bg-amber-50 border-amber-200 hover:bg-amber-100'
+                              } ${highlightStep === stage.key ? 'ring-2 ring-gold-400 ring-offset-1' : ''}`}
                             >
                               <AlertTriangle
                                 className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
                                   ab.level === 'critical' ? 'text-rose-500' : 'text-amber-500'
                                 }`}
                               />
-                              <div className="text-xs text-industrial-700">{ab.message}</div>
-                            </div>
+                              <div className="text-xs text-industrial-700 flex-1">{ab.message}</div>
+                              <ChevronRight className="w-3.5 h-3.5 text-industrial-400 mt-0.5" />
+                            </button>
                           ))}
                         </div>
                       )}
@@ -514,7 +583,11 @@ export default function BatchTracking() {
 
                     {/* 箭头 */}
                     {!isLast && (
-                      <div className="absolute right-0 top-5 text-industrial-300">
+                      <div className={`absolute right-0 top-5 transition-colors ${
+                        isHighlighted && currentIndex < highlightIndex
+                          ? 'text-gold-400'
+                          : 'text-industrial-300'
+                      }`}>
                         <ArrowRight className="w-4 h-4" />
                       </div>
                     )}
