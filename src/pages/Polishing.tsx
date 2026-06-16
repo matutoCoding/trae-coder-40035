@@ -1,7 +1,10 @@
+import { useState, useMemo } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
+import DataTable from '@/components/common/DataTable';
 import { polishingRecords } from '@/utils/mockData';
-import { Sparkles, Diamond, Ruler, CircleDot, Activity, Search } from 'lucide-react';
+import type { PolishingRecord } from '@/types';
+import { Sparkles, Diamond, Ruler, CircleDot, Activity, Search, Filter, Download, Eye } from 'lucide-react';
 
 interface PolishingHead {
   id: number;
@@ -20,6 +23,116 @@ interface EdgeParam {
 }
 
 export default function Polishing() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterGlossiness, setFilterGlossiness] = useState('all');
+
+  const filteredRecords = useMemo(() => {
+    return polishingRecords.filter((r) => {
+      const matchSearch =
+        !searchTerm ||
+        r.batchNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.polishingHeadConfig.includes(searchTerm) ||
+        r.polishingFluid.includes(searchTerm) ||
+        r.operator.includes(searchTerm);
+      const matchGlossiness =
+        filterGlossiness === 'all' ||
+        (filterGlossiness === 'excellent' && r.glossiness >= 92) ||
+        (filterGlossiness === 'qualified' && r.glossiness >= 85 && r.glossiness < 92) ||
+        (filterGlossiness === 'improve' && r.glossiness < 85);
+      return matchSearch && matchGlossiness;
+    });
+  }, [searchTerm, filterGlossiness]);
+
+  const handleExport = () => {
+    const headers = ['批次号', '磨头配置', '抛光速度', '进给量', '抛光液', '光泽度(%)', '平面度(mm)', '磨边量(mm)', '倒角(°)', '操作员'];
+    const rows = filteredRecords.map((r) => [
+      r.batchNo,
+      r.polishingHeadConfig,
+      r.polishingSpeed.toFixed(0),
+      r.feedRate.toFixed(1),
+      r.polishingFluid,
+      r.glossiness.toFixed(1),
+      r.surfaceFlatness.toFixed(2),
+      r.edgeGrindingAmount.toFixed(2),
+      r.chamferAngle.toFixed(0),
+      r.operator,
+    ]);
+    const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `抛光记录_${new Date().toLocaleDateString()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const columns = [
+    { key: 'batchNo', title: '批次号', render: (r: PolishingRecord) => (
+      <span className="font-mono text-xs text-kiln-600 font-semibold">{r.batchNo}</span>
+    )},
+    { key: 'polishingHeadConfig', title: '磨头配置', render: (r: PolishingRecord) => (
+      <span className="badge bg-gold-50 text-gold-700 border border-gold-200">{r.polishingHeadConfig}</span>
+    )},
+    { key: 'polishingSpeed', title: '抛光速度', render: (r: PolishingRecord) => (
+      <span className="font-mono">{r.polishingSpeed.toFixed(0)} rpm</span>
+    )},
+    { key: 'feedRate', title: '进给量', render: (r: PolishingRecord) => (
+      <span className="font-mono">{r.feedRate.toFixed(1)} m/min</span>
+    )},
+    { key: 'polishingFluid', title: '抛光液', render: (r: PolishingRecord) => (
+      <div className="flex items-center gap-2">
+        <span className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-100 to-cyan-100 border border-blue-200 flex items-center justify-center">
+          <Diamond className="w-3 h-3 text-blue-600" />
+        </span>
+        <span className="font-medium text-industrial-700">{r.polishingFluid}</span>
+      </div>
+    )},
+    { key: 'glossiness', title: '光泽度(%)', render: (r: PolishingRecord) => (
+      <div className="flex items-center gap-2">
+        <div className="w-20 h-2 rounded-full bg-industrial-200 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${
+              r.glossiness >= 92
+                ? 'bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500'
+                : r.glossiness >= 85
+                ? 'bg-gradient-to-r from-gold-500 to-emerald-500'
+                : 'bg-gradient-to-r from-kiln-400 to-gold-500'
+            }`}
+            style={{ width: `${r.glossiness}%` }}
+          />
+        </div>
+        <span className={`font-mono font-bold w-12 ${
+          r.glossiness >= 92 ? 'text-blue-600' : r.glossiness >= 85 ? 'text-emerald-600' : 'text-kiln-600'
+        }`}>
+          {r.glossiness.toFixed(1)}
+        </span>
+      </div>
+    )},
+    { key: 'surfaceFlatness', title: '平面度(mm)', render: (r: PolishingRecord) => (
+      <span className={`font-mono font-semibold ${
+        r.surfaceFlatness > 0.2 ? 'text-kiln-600' : 'text-emerald-600'
+      }`}>
+        {r.surfaceFlatness.toFixed(2)}
+      </span>
+    )},
+    { key: 'edgeGrindingAmount', title: '磨边量(mm)', render: (r: PolishingRecord) => (
+      <span className="font-mono font-semibold text-industrial-700">{r.edgeGrindingAmount.toFixed(2)}</span>
+    )},
+    { key: 'chamferAngle', title: '倒角(°)', render: (r: PolishingRecord) => (
+      <span className="font-mono font-semibold text-industrial-700">{r.chamferAngle}°</span>
+    )},
+    { key: 'operator', title: '操作员', render: (r: PolishingRecord) => (
+      <span className="text-industrial-700">{r.operator}</span>
+    )},
+    { key: 'action', title: '操作', render: () => (
+      <button className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-kiln-600 bg-kiln-50 rounded-md hover:bg-kiln-100 transition-colors">
+        <Eye className="w-3.5 h-3.5" />
+        详情
+      </button>
+    )},
+  ];
+
   const polishingHeads: PolishingHead[] = [
     { id: 1, type: 'rough', typeLabel: '粗磨', typeClass: 'bg-kiln-500', rpm: 280, depth: 0.45 },
     { id: 2, type: 'rough', typeLabel: '粗磨', typeClass: 'bg-kiln-500', rpm: 320, depth: 0.38 },
@@ -332,90 +445,48 @@ export default function Polishing() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="font-display text-lg font-semibold text-industrial-900">抛光记录</h3>
-            <p className="text-xs text-industrial-500 mt-0.5">最近 {polishingRecords.length} 批次抛光磨边记录</p>
+            <p className="text-xs text-industrial-500 mt-0.5">显示 {filteredRecords.length} / 共 {polishingRecords.length} 条记录</p>
           </div>
           <div className="flex items-center gap-2">
-            <input type="text" placeholder="搜索批次..." className="input-field !w-48 !py-2 text-sm" />
-            <select className="input-field !w-36 !py-2 text-sm">
-              <option>全部磨头配置</option>
-              <option>8组磨头</option>
-              <option>9组磨头</option>
-              <option>10组磨头</option>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-industrial-400" />
+              <input
+                type="text"
+                placeholder="搜索批次/磨头/抛光液/操作员..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input-field !w-56 !pl-9 !py-2 text-sm"
+              />
+            </div>
+            <select
+              value={filterGlossiness}
+              onChange={(e) => setFilterGlossiness(e.target.value)}
+              className="input-field !w-32 !py-2 text-sm"
+            >
+              <option value="all">全部光泽度</option>
+              <option value="excellent">优良 (≥92%)</option>
+              <option value="qualified">合格 (85-92%)</option>
+              <option value="improve">待提高 (&lt;85%)</option>
             </select>
+            <button onClick={handleExport} className="btn-secondary !py-2 text-sm inline-flex items-center gap-1.5">
+              <Download className="w-4 h-4" />
+              导出
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-industrial-100">
-                <th className="table-th">批次</th>
-                <th className="table-th">磨头配置</th>
-                <th className="table-th">转速(rpm)</th>
-                <th className="table-th">进给量</th>
-                <th className="table-th">抛光液</th>
-                <th className="table-th">光泽度</th>
-                <th className="table-th">平面度(mm)</th>
-                <th className="table-th">倒角(°)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-industrial-50">
-              {polishingRecords.map((record) => (
-                <tr key={record.id} className="hover:bg-industrial-50/50 transition-colors">
-                  <td className="table-td font-mono text-xs text-kiln-600 font-semibold">{record.batchNo}</td>
-                  <td className="table-td">
-                    <span className="badge bg-gold-50 text-gold-700 border border-gold-200">{record.polishingHeadConfig}</span>
-                  </td>
-                  <td className="table-td font-mono">{record.polishingSpeed.toFixed(0)}</td>
-                  <td className="table-td font-mono">{record.feedRate.toFixed(1)} m/min</td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-100 to-cyan-100 border border-blue-200 flex items-center justify-center">
-                        <Diamond className="w-3 h-3 text-blue-600" />
-                      </span>
-                      <span className="font-medium text-industrial-700">{record.polishingFluid}</span>
-                    </div>
-                  </td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-2">
-                      <div className="w-20 h-2 rounded-full bg-industrial-200 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            record.glossiness >= 95
-                              ? 'bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500'
-                              : record.glossiness >= 85
-                              ? 'bg-gradient-to-r from-gold-500 to-emerald-500'
-                              : 'bg-gradient-to-r from-kiln-400 to-gold-500'
-                          }`}
-                          style={{ width: `${record.glossiness}%` }}
-                        />
-                      </div>
-                      <span className={`font-mono font-bold w-12 ${
-                        record.glossiness >= 95 ? 'text-blue-600' : record.glossiness >= 85 ? 'text-emerald-600' : 'text-kiln-600'
-                      }`}>
-                        {record.glossiness.toFixed(1)}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="table-td">
-                    <span className={`font-mono font-semibold ${
-                      record.surfaceFlatness > 0.2 ? 'text-kiln-600' : 'text-emerald-600'
-                    }`}>
-                      {record.surfaceFlatness.toFixed(2)}
-                    </span>
-                  </td>
-                  <td className="table-td font-mono font-semibold text-industrial-700">{record.chamferAngle}°</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={filteredRecords}
+          rowKey="id"
+          emptyText="暂无抛光记录"
+        />
 
         <div className="px-5 py-4 border-t border-industrial-100 flex items-center justify-between text-sm text-industrial-500">
-          <span>共 {polishingRecords.length} 条记录</span>
+          <span>显示 {filteredRecords.length} / 共 {polishingRecords.length} 条记录</span>
           <div className="flex items-center gap-1">
             <button className="btn-secondary !py-1.5 !px-3 text-xs">上一页</button>
             <span className="px-3 py-1.5 text-kiln-600 font-semibold">1</span>

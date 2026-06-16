@@ -70,6 +70,7 @@ export interface KilnFiringRecord extends ProductionRecord {
   kilnPressure: number;
   maxTemp: number;
   fuelConsumption: number;
+  passRate?: number;
 }
 
 export interface PolishingRecord extends ProductionRecord {
@@ -151,4 +152,5 @@ export type ModuleKey =
   | "glazing"
   | "kiln-firing"
   | "polishing"
-  | "grading-packaging";
+  | "grading-packaging"
+  | "batch-tracking";

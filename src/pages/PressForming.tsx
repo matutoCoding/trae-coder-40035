@@ -1,9 +1,15 @@
+import { useMemo, useState } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
+import DataTable from '@/components/common/DataTable';
 import { pressFormingRecords } from '@/utils/mockData';
-import { Hammer, Gauge, Ruler, Box } from 'lucide-react';
+import type { PressFormingRecord } from '@/types';
+import { Hammer, Gauge, Ruler, Box, Search, Filter, Download } from 'lucide-react';
 
 export default function PressForming() {
+  const [searchText, setSearchText] = useState('');
+  const [defectFilter, setDefectFilter] = useState('all');
+
   const presses = [
     { id: 'PR-301', mold: '800×800', pressure: 320, pressureMax: 400, cycle: 7.2, output: 2680, status: 'running' },
     { id: 'PR-302', mold: '600×1200', pressure: 295, pressureMax: 400, cycle: 8.1, output: 2340, status: 'running' },
@@ -18,6 +24,123 @@ export default function PressForming() {
     warning: { light: 'bg-amber-500', label: '异常', labelClass: 'text-amber-700 bg-amber-50 animate-pulse' },
     maintenance: { light: 'bg-industrial-400', label: '维护中', labelClass: 'text-industrial-600 bg-industrial-100' },
   };
+
+  const filteredRecords = useMemo(() => {
+    return pressFormingRecords.filter((record) => {
+      const matchSearch =
+        searchText === '' ||
+        record.batchNo.toLowerCase().includes(searchText.toLowerCase()) ||
+        record.pressId.toLowerCase().includes(searchText.toLowerCase()) ||
+        record.moldSpec.toLowerCase().includes(searchText.toLowerCase()) ||
+        record.operator.toLowerCase().includes(searchText.toLowerCase());
+
+      let matchDefect = true;
+      if (defectFilter === 'normal') {
+        matchDefect = record.defectRate < 1.5;
+      } else if (defectFilter === 'high') {
+        matchDefect = record.defectRate >= 1.5 && record.defectRate < 3;
+      } else if (defectFilter === 'serious') {
+        matchDefect = record.defectRate >= 3;
+      }
+
+      return matchSearch && matchDefect;
+    });
+  }, [searchText, defectFilter]);
+
+  const handleExport = () => {
+    const headers = ['批次号', '压机', '模具规格', '压力(bar)', '保压时间(s)', '砖重(kg)', '厚度(mm)', '缺陷率(%)', '班产量', '操作员'];
+    const rows = filteredRecords.map((record) => [
+      record.batchNo,
+      record.pressId,
+      record.moldSpec,
+      record.pressure.toFixed(0),
+      record.holdingTime.toFixed(2),
+      record.brickWeight.toFixed(2),
+      record.thickness.toFixed(2),
+      record.defectRate.toFixed(2),
+      record.outputCount.toString(),
+      record.operator,
+    ]);
+
+    const csvContent = '\uFEFF' + [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `压制成型记录_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const columns = [
+    {
+      key: 'batchNo',
+      title: '批次',
+      render: (row: PressFormingRecord) => (
+        <span className="font-mono text-xs text-kiln-600 font-semibold">{row.batchNo}</span>
+      ),
+    },
+    {
+      key: 'pressId',
+      title: '压机',
+      render: (row: PressFormingRecord) => (
+        <span className="badge bg-industrial-100 text-industrial-700">{row.pressId}</span>
+      ),
+    },
+    {
+      key: 'moldSpec',
+      title: '模具',
+      render: (row: PressFormingRecord) => (
+        <span className="font-mono font-semibold">{row.moldSpec}</span>
+      ),
+    },
+    {
+      key: 'pressure',
+      title: '压力(bar)',
+      render: (row: PressFormingRecord) => <span className="font-mono">{row.pressure.toFixed(0)}</span>,
+    },
+    {
+      key: 'holdingTime',
+      title: '保压(s)',
+      render: (row: PressFormingRecord) => <span className="font-mono">{row.holdingTime.toFixed(2)}</span>,
+    },
+    {
+      key: 'brickWeight',
+      title: '砖重(kg)',
+      render: (row: PressFormingRecord) => <span className="font-mono">{row.brickWeight.toFixed(2)}</span>,
+    },
+    {
+      key: 'thickness',
+      title: '厚度(mm)',
+      render: (row: PressFormingRecord) => <span className="font-mono">{row.thickness.toFixed(2)}</span>,
+    },
+    {
+      key: 'defectRate',
+      title: '缺陷率(%)',
+      render: (row: PressFormingRecord) => (
+        <span
+          className={`font-mono font-semibold ${
+            row.defectRate > 2.5
+              ? 'text-kiln-600'
+              : row.defectRate > 1.5
+              ? 'text-amber-600'
+              : 'text-emerald-600'
+          }`}
+        >
+          {row.defectRate.toFixed(2)}
+        </span>
+      ),
+    },
+    {
+      key: 'outputCount',
+      title: '班产量',
+      render: (row: PressFormingRecord) => (
+        <span className="font-mono font-semibold">{row.outputCount.toLocaleString()}</span>
+      ),
+    },
+  ];
 
   return (
     <div className="p-6">
@@ -111,12 +234,20 @@ export default function PressForming() {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${
-                          press.status === 'maintenance' ? 'bg-industrial-100' : 'bg-gradient-to-br from-kiln-500 to-kiln-600'
-                        }`}>
-                          <Hammer className={`w-6 h-6 ${press.status === 'maintenance' ? 'text-industrial-500' : 'text-white'}`} />
+                        <div
+                          className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${
+                            press.status === 'maintenance'
+                              ? 'bg-industrial-100'
+                              : 'bg-gradient-to-br from-kiln-500 to-kiln-600'
+                          }`}
+                        >
+                          <Hammer
+                            className={`w-6 h-6 ${press.status === 'maintenance' ? 'text-industrial-500' : 'text-white'}`}
+                          />
                         </div>
-                        <span className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${cfg.light} ring-2 ring-white shadow-sm`} />
+                        <span
+                          className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full ${cfg.light} ring-2 ring-white shadow-sm`}
+                        />
                       </div>
                       <div>
                         <h4 className="font-display text-lg font-bold text-industrial-900">{press.id}</h4>
@@ -169,7 +300,9 @@ export default function PressForming() {
                     <div className="text-center">
                       <div className="text-[10px] text-industrial-500 mb-0.5">状态灯</div>
                       <div className="flex items-center justify-center gap-1 h-6">
-                        <span className={`w-2 h-2 rounded-full ${cfg.light} ${press.status === 'running' ? 'animate-pulse' : ''}`} />
+                        <span
+                          className={`w-2 h-2 rounded-full ${cfg.light} ${press.status === 'running' ? 'animate-pulse' : ''}`}
+                        />
                       </div>
                     </div>
                   </div>
@@ -184,60 +317,54 @@ export default function PressForming() {
         <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between">
           <div>
             <h3 className="font-display text-lg font-semibold text-industrial-900">成型记录</h3>
-            <p className="text-xs text-industrial-500 mt-0.5">最近 {pressFormingRecords.length} 批次砖坯成型记录</p>
+            <p className="text-xs text-industrial-500 mt-0.5">
+              最近 {pressFormingRecords.length} 批次砖坯成型记录
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <input type="text" placeholder="搜索批次..." className="input-field !w-48 !py-2 text-sm" />
-            <select className="input-field !w-36 !py-2 text-sm">
-              <option>全部压机</option>
-              {presses.map((p) => (
-                <option key={p.id}>{p.id}</option>
-              ))}
-            </select>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-industrial-400" />
+              <input
+                type="text"
+                placeholder="搜索批次号、压机、模具、操作员..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="input-field !w-80 !py-2 !pl-8 text-sm"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-industrial-400" />
+              <select
+                value={defectFilter}
+                onChange={(e) => setDefectFilter(e.target.value)}
+                className="input-field !w-36 !py-2 !pl-8 text-sm appearance-none pr-8"
+              >
+                <option value="all">全部缺陷率</option>
+                <option value="normal">正常</option>
+                <option value="high">偏高</option>
+                <option value="serious">严重</option>
+              </select>
+            </div>
+            <button
+              onClick={handleExport}
+              className="btn-primary !py-2 text-sm inline-flex items-center gap-1.5"
+            >
+              <Download className="w-4 h-4" />
+              导出
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-industrial-100">
-                <th className="table-th">批次</th>
-                <th className="table-th">压机</th>
-                <th className="table-th">模具</th>
-                <th className="table-th">压力(bar)</th>
-                <th className="table-th">保压(s)</th>
-                <th className="table-th">砖重(kg)</th>
-                <th className="table-th">厚度(mm)</th>
-                <th className="table-th">缺陷率(%)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-industrial-50">
-              {pressFormingRecords.map((record) => (
-                <tr key={record.id} className="hover:bg-industrial-50/50 transition-colors">
-                  <td className="table-td font-mono text-xs text-kiln-600 font-semibold">{record.batchNo}</td>
-                  <td className="table-td">
-                    <span className="badge bg-industrial-100 text-industrial-700">{record.pressId}</span>
-                  </td>
-                  <td className="table-td font-mono font-semibold">{record.moldSpec}</td>
-                  <td className="table-td font-mono">{record.pressure.toFixed(0)}</td>
-                  <td className="table-td font-mono">{record.holdingTime.toFixed(2)}</td>
-                  <td className="table-td font-mono">{record.brickWeight.toFixed(2)}</td>
-                  <td className="table-td font-mono">{record.thickness.toFixed(2)}</td>
-                  <td className="table-td">
-                    <span className={`font-mono font-semibold ${
-                      record.defectRate > 2.5 ? 'text-kiln-600' : record.defectRate > 1.5 ? 'text-amber-600' : 'text-emerald-600'
-                    }`}>
-                      {record.defectRate.toFixed(2)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<PressFormingRecord>
+          columns={columns}
+          data={filteredRecords}
+          rowKey="id"
+        />
 
         <div className="px-5 py-4 border-t border-industrial-100 flex items-center justify-between text-sm text-industrial-500">
-          <span>共 {pressFormingRecords.length} 条记录</span>
+          <span>
+            显示 {filteredRecords.length} / 共 {pressFormingRecords.length} 条记录
+          </span>
           <div className="flex items-center gap-1">
             <button className="btn-secondary !py-1.5 !px-3 text-xs">上一页</button>
             <span className="px-3 py-1.5 text-kiln-600 font-semibold">1</span>

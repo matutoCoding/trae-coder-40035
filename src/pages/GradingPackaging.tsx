@@ -1,7 +1,10 @@
+import { useState, useMemo } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
+import DataTable from '@/components/common/DataTable';
 import { gradingRecords } from '@/utils/mockData';
-import { Boxes, Search, Palette, CheckSquare, Package, Triangle, Layers, ScanLine, Tag, Shield } from 'lucide-react';
+import type { GradingRecord } from '@/types';
+import { Boxes, Search, Palette, CheckSquare, Package, Triangle, Layers, ScanLine, Tag, Shield, Filter, Download, Eye } from 'lucide-react';
 
 interface GradeStat {
   grade: string;
@@ -32,6 +35,144 @@ interface ColorCard {
 }
 
 export default function GradingPackaging() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterGrade, setFilterGrade] = useState('all');
+
+  const filteredRecords = useMemo(() => {
+    return gradingRecords.filter((r) => {
+      const matchSearch =
+        !searchTerm ||
+        r.batchNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.colorNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.packagingSpec.includes(searchTerm) ||
+        r.operator.includes(searchTerm);
+      const matchGrade =
+        filterGrade === 'all' || r.grade === filterGrade;
+      return matchSearch && matchGrade;
+    });
+  }, [searchTerm, filterGrade]);
+
+  const handleExport = () => {
+    const headers = ['批次号', '平整度(mm)', '直角度(mm)', '边直度(mm)', '色差ΔE', '色号', '等级', '包装规格', '数量', '操作员'];
+    const rows = filteredRecords.map((r) => [
+      r.batchNo,
+      r.flatness.toFixed(2),
+      r.squareness.toFixed(2),
+      r.edgeStraightness.toFixed(2),
+      r.colorDifference.toFixed(2),
+      r.colorNo,
+      r.grade,
+      r.packagingSpec,
+      r.quantity.toLocaleString(),
+      r.operator,
+    ]);
+    const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `分级记录_${new Date().toLocaleDateString()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const getGradeBadgeStyle = (grade: string) => {
+    switch (grade) {
+      case 'A':
+        return 'bg-gradient-to-br from-yellow-100 to-amber-100 text-yellow-700 border-yellow-300';
+      case 'B':
+        return 'bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 border-blue-300';
+      case 'C':
+        return 'bg-gradient-to-br from-gray-100 to-slate-100 text-gray-700 border-gray-300';
+      case 'D':
+        return 'bg-gradient-to-br from-red-100 to-rose-100 text-red-700 border-red-300';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-300';
+    }
+  };
+
+  const getColorByNo = (colorNo: string) => {
+    const idx = (parseInt(colorNo.replace('C', '')) - 101) % 12;
+    return colorCards[idx]?.color || '#E8E0D0';
+  };
+
+  const columns = [
+    { key: 'batchNo', title: '批次号', render: (r: GradingRecord) => (
+      <span className="font-mono text-xs text-kiln-600 font-semibold">{r.batchNo}</span>
+    )},
+    { key: 'flatness', title: '平整度(mm)', render: (r: GradingRecord) => (
+      <span className={`font-mono font-semibold ${
+        r.flatness > 0.2 ? 'text-kiln-600' : r.flatness > 0.15 ? 'text-gold-600' : 'text-emerald-600'
+      }`}>
+        {r.flatness.toFixed(2)}
+      </span>
+    )},
+    { key: 'squareness', title: '直角度(mm)', render: (r: GradingRecord) => (
+      <span className={`font-mono font-semibold ${
+        r.squareness > 0.25 ? 'text-kiln-600' : r.squareness > 0.2 ? 'text-gold-600' : 'text-emerald-600'
+      }`}>
+        {r.squareness.toFixed(2)}
+      </span>
+    )},
+    { key: 'edgeStraightness', title: '边直度(mm)', render: (r: GradingRecord) => (
+      <span className={`font-mono font-semibold ${
+        r.edgeStraightness > 0.2 ? 'text-kiln-600' : r.edgeStraightness > 0.15 ? 'text-gold-600' : 'text-emerald-600'
+      }`}>
+        {r.edgeStraightness.toFixed(2)}
+      </span>
+    )},
+    { key: 'colorDifference', title: '色差ΔE', render: (r: GradingRecord) => (
+      <div className="flex items-center gap-2">
+        <div className="w-16 h-2 rounded-full bg-industrial-200 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${
+              r.colorDifference <= 0.5
+                ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                : r.colorDifference <= 0.8
+                ? 'bg-gradient-to-r from-gold-400 to-gold-600'
+                : 'bg-gradient-to-r from-kiln-400 to-kiln-600'
+            }`}
+            style={{ width: `${Math.min((r.colorDifference / 1.5) * 100, 100)}%` }}
+          />
+        </div>
+        <span className={`font-mono font-semibold w-12 ${
+          r.colorDifference <= 0.5 ? 'text-emerald-600' : r.colorDifference <= 0.8 ? 'text-gold-600' : 'text-kiln-600'
+        }`}>
+          {r.colorDifference.toFixed(2)}
+        </span>
+      </div>
+    )},
+    { key: 'colorNo', title: '色号', render: (r: GradingRecord) => (
+      <div className="flex items-center gap-2">
+        <div
+          className="w-5 h-5 rounded-md border border-industrial-200 shadow-sm"
+          style={{ backgroundColor: getColorByNo(r.colorNo) }}
+        />
+        <span className="font-mono font-semibold text-industrial-700">{r.colorNo}</span>
+      </div>
+    )},
+    { key: 'grade', title: '等级', render: (r: GradingRecord) => (
+      <span className={`inline-flex items-center justify-center w-9 h-9 rounded-xl border-2 shadow-sm font-display text-lg font-bold ${getGradeBadgeStyle(r.grade)}`}>
+        {r.grade}
+      </span>
+    )},
+    { key: 'packagingSpec', title: '包装规格', render: (r: GradingRecord) => (
+      <span className="badge bg-industrial-100 text-industrial-700 border border-industrial-200">{r.packagingSpec}</span>
+    )},
+    { key: 'quantity', title: '数量', render: (r: GradingRecord) => (
+      <span className="font-mono font-bold text-industrial-800">{r.quantity.toLocaleString()}</span>
+    )},
+    { key: 'operator', title: '操作员', render: (r: GradingRecord) => (
+      <span className="text-industrial-700">{r.operator}</span>
+    )},
+    { key: 'action', title: '操作', render: () => (
+      <button className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-kiln-600 bg-kiln-50 rounded-md hover:bg-kiln-100 transition-colors">
+        <Eye className="w-3.5 h-3.5" />
+        详情
+      </button>
+    )},
+  ];
+
   const gradeStats: GradeStat[] = [
     {
       grade: 'A',
@@ -425,105 +566,49 @@ export default function GradingPackaging() {
       </div>
 
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <h3 className="font-display text-lg font-semibold text-industrial-900">分级记录</h3>
-            <p className="text-xs text-industrial-500 mt-0.5">最近 {gradingRecords.length} 批次产品分级包装记录</p>
+            <p className="text-xs text-industrial-500 mt-0.5">显示 {filteredRecords.length} / 共 {gradingRecords.length} 条记录</p>
           </div>
           <div className="flex items-center gap-2">
-            <input type="text" placeholder="搜索批次..." className="input-field !w-48 !py-2 text-sm" />
-            <select className="input-field !w-36 !py-2 text-sm">
-              <option>全部等级</option>
-              <option>A 优等品</option>
-              <option>B 一级品</option>
-              <option>C 合格品</option>
-              <option>D 次品</option>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-industrial-400" />
+              <input
+                type="text"
+                placeholder="搜索批次/色号/包装规格/操作员..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input-field !w-56 !pl-9 !py-2 text-sm"
+              />
+            </div>
+            <select
+              value={filterGrade}
+              onChange={(e) => setFilterGrade(e.target.value)}
+              className="input-field !w-36 !py-2 text-sm"
+            >
+              <option value="all">全部等级</option>
+              <option value="A">A 优等品</option>
+              <option value="B">B 一级品</option>
+              <option value="C">C 合格品</option>
+              <option value="D">D 次品</option>
             </select>
+            <button onClick={handleExport} className="btn-secondary !py-2 text-sm inline-flex items-center gap-1.5">
+              <Download className="w-4 h-4" />
+              导出
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-industrial-100">
-                <th className="table-th">批次</th>
-                <th className="table-th">平整度</th>
-                <th className="table-th">直角度</th>
-                <th className="table-th">色差ΔE</th>
-                <th className="table-th">色号</th>
-                <th className="table-th">等级</th>
-                <th className="table-th">包装规格</th>
-                <th className="table-th">数量</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-industrial-50">
-              {gradingRecords.map((record) => {
-                const gradeCfg = getGradeConfig(record.grade);
-                return (
-                  <tr key={record.id} className="hover:bg-industrial-50/50 transition-colors">
-                    <td className="table-td font-mono text-xs text-kiln-600 font-semibold">{record.batchNo}</td>
-                    <td className="table-td">
-                      <span className={`font-mono font-semibold ${
-                        record.flatness > 0.2 ? 'text-kiln-600' : record.flatness > 0.15 ? 'text-gold-600' : 'text-emerald-600'
-                      }`}>
-                        {record.flatness.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="table-td">
-                      <span className={`font-mono font-semibold ${
-                        record.squareness > 0.25 ? 'text-kiln-600' : record.squareness > 0.2 ? 'text-gold-600' : 'text-emerald-600'
-                      }`}>
-                        {record.squareness.toFixed(2)}
-                      </span>
-                    </td>
-                    <td className="table-td">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-2 rounded-full bg-industrial-200 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              record.colorDifference <= 0.5
-                                ? 'bg-gradient-to-r from-emerald-400 to-emerald-600'
-                                : record.colorDifference <= 0.8
-                                ? 'bg-gradient-to-r from-gold-400 to-gold-600'
-                                : 'bg-gradient-to-r from-kiln-400 to-kiln-600'
-                            }`}
-                            style={{ width: `${Math.min((record.colorDifference / 1.5) * 100, 100)}%` }}
-                          />
-                        </div>
-                        <span className={`font-mono font-semibold w-12 ${
-                          record.colorDifference <= 0.5 ? 'text-emerald-600' : record.colorDifference <= 0.8 ? 'text-gold-600' : 'text-kiln-600'
-                        }`}>
-                          {record.colorDifference.toFixed(2)}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="table-td">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-5 h-5 rounded-md border border-industrial-200 shadow-sm"
-                          style={{ backgroundColor: colorCards[(parseInt(record.colorNo.replace('C', '')) - 101) % 12]?.color || '#E8E0D0' }}
-                        />
-                        <span className="font-mono font-semibold text-industrial-700">{record.colorNo}</span>
-                      </div>
-                    </td>
-                    <td className="table-td">
-                      <div className={`inline-flex items-center justify-center w-9 h-9 rounded-xl ${gradeCfg.badgeBg} border-2 ${gradeCfg.badgeBorder} shadow-sm`}>
-                        <span className={`font-display text-lg font-bold ${gradeCfg.badgeText}`}>{record.grade}</span>
-                      </div>
-                    </td>
-                    <td className="table-td">
-                      <span className="badge bg-industrial-100 text-industrial-700 border border-industrial-200">{record.packagingSpec}</span>
-                    </td>
-                    <td className="table-td font-mono font-bold text-industrial-800">{record.quantity.toLocaleString()}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={filteredRecords}
+          rowKey="id"
+          emptyText="暂无分级记录"
+        />
 
         <div className="px-5 py-4 border-t border-industrial-100 flex items-center justify-between text-sm text-industrial-500">
-          <span>共 {gradingRecords.length} 条记录</span>
+          <span>显示 {filteredRecords.length} / 共 {gradingRecords.length} 条记录</span>
           <div className="flex items-center gap-1">
             <button className="btn-secondary !py-1.5 !px-3 text-xs">上一页</button>
             <span className="px-3 py-1.5 text-kiln-600 font-semibold">1</span>

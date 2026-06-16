@@ -1,9 +1,15 @@
+import { useMemo, useState } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
+import DataTable from '@/components/common/DataTable';
 import { glazingRecords } from '@/utils/mockData';
-import { PaintBucket, Sun, Palette, Droplet } from 'lucide-react';
+import type { GlazingRecord } from '@/types';
+import { PaintBucket, Sun, Palette, Droplet, Search, Filter, Download } from 'lucide-react';
 
 export default function Glazing() {
+  const [searchText, setSearchText] = useState('');
+  const [glazeFilter, setGlazeFilter] = useState('all');
+
   const dryerZones = [
     { name: 'Z1预热', temp: 132, max: 150, color: 'from-blue-400 to-cyan-400' },
     { name: 'Z2升温', temp: 168, max: 200, color: 'from-cyan-400 to-green-400' },
@@ -55,6 +61,127 @@ export default function Glazing() {
       </div>
     );
   }
+
+  const filteredRecords = useMemo(() => {
+    return glazingRecords.filter((record) => {
+      const matchSearch =
+        searchText === '' ||
+        record.batchNo.toLowerCase().includes(searchText.toLowerCase()) ||
+        record.patternName.toLowerCase().includes(searchText.toLowerCase()) ||
+        record.operator.toLowerCase().includes(searchText.toLowerCase());
+
+      let matchGlaze = true;
+      if (glazeFilter === 'thin') {
+        matchGlaze = record.glazeThickness < 0.55;
+      } else if (glazeFilter === 'normal') {
+        matchGlaze = record.glazeThickness >= 0.55 && record.glazeThickness <= 0.75;
+      } else if (glazeFilter === 'thick') {
+        matchGlaze = record.glazeThickness > 0.75;
+      }
+
+      return matchSearch && matchGlaze;
+    });
+  }, [searchText, glazeFilter]);
+
+  const handleExport = () => {
+    const headers = ['批次号', '图案名称', '干燥时间(min)', '釉浆比重', '施釉量(g/㎡)', '釉层厚度(mm)', '干燥损失(%)', '操作员'];
+    const rows = filteredRecords.map((record) => [
+      record.batchNo,
+      record.patternName,
+      record.dryingTime.toFixed(1),
+      record.glazeDensity.toFixed(3),
+      record.glazeAmount.toFixed(0),
+      record.glazeThickness.toFixed(2),
+      record.dryingLoss.toFixed(2),
+      record.operator,
+    ]);
+
+    const csvContent = '\uFEFF' + [headers, ...rows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `施釉记录_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const columns = [
+    {
+      key: 'batchNo',
+      title: '批次',
+      render: (row: GlazingRecord) => (
+        <span className="font-mono text-xs text-kiln-600 font-semibold">{row.batchNo}</span>
+      ),
+    },
+    {
+      key: 'patternName',
+      title: '图案',
+      render: (row: GlazingRecord) => (
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-md bg-gradient-to-br from-gold-100 to-kiln-100 border border-gold-200 flex items-center justify-center">
+            <Palette className="w-3.5 h-3.5 text-kiln-600" />
+          </span>
+          <span className="font-medium text-industrial-800">{row.patternName}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'dryingTime',
+      title: '干燥时间(min)',
+      render: (row: GlazingRecord) => <span className="font-mono">{row.dryingTime.toFixed(1)}</span>,
+    },
+    {
+      key: 'glazeDensity',
+      title: '釉比重',
+      render: (row: GlazingRecord) => (
+        <span
+          className={`font-mono font-semibold ${
+            row.glazeDensity > 1.6 || row.glazeDensity < 1.4 ? 'text-amber-600' : 'text-emerald-600'
+          }`}
+        >
+          {row.glazeDensity.toFixed(3)}
+        </span>
+      ),
+    },
+    {
+      key: 'glazeAmount',
+      title: '施釉量',
+      render: (row: GlazingRecord) => (
+        <span className="font-mono">{row.glazeAmount.toFixed(0)} g/m²</span>
+      ),
+    },
+    {
+      key: 'glazeThickness',
+      title: '釉厚(mm)',
+      render: (row: GlazingRecord) => (
+        <div className="flex items-center gap-2">
+          <div className="w-16 h-2 rounded-full bg-industrial-200 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-kiln-500"
+              style={{ width: `${(row.glazeThickness / 1.0) * 100}%` }}
+            />
+          </div>
+          <span className="font-mono font-semibold text-industrial-700 w-12">
+            {row.glazeThickness.toFixed(2)}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'dryingLoss',
+      title: '干燥损失(%)',
+      render: (row: GlazingRecord) => (
+        <span
+          className={`font-mono font-semibold ${row.dryingLoss > 0.6 ? 'text-kiln-600' : 'text-emerald-600'}`}
+        >
+          {row.dryingLoss.toFixed(2)}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div className="p-6">
@@ -253,79 +380,54 @@ export default function Glazing() {
         <div className="px-5 py-4 border-b border-industrial-100 flex items-center justify-between">
           <div>
             <h3 className="font-display text-lg font-semibold text-industrial-900">施釉记录</h3>
-            <p className="text-xs text-industrial-500 mt-0.5">最近 {glazingRecords.length} 批次施釉干燥记录</p>
+            <p className="text-xs text-industrial-500 mt-0.5">
+              最近 {glazingRecords.length} 批次施釉干燥记录
+            </p>
           </div>
           <div className="flex items-center gap-2">
-            <input type="text" placeholder="搜索批次..." className="input-field !w-48 !py-2 text-sm" />
-            <select className="input-field !w-36 !py-2 text-sm">
-              <option>全部图案</option>
-              <option>爵士白</option>
-              <option>卡拉拉</option>
-              <option>鱼肚白</option>
-            </select>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-industrial-400" />
+              <input
+                type="text"
+                placeholder="搜索批次号、图案、操作员..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="input-field !w-72 !py-2 !pl-8 text-sm"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-industrial-400" />
+              <select
+                value={glazeFilter}
+                onChange={(e) => setGlazeFilter(e.target.value)}
+                className="input-field !w-36 !py-2 !pl-8 text-sm appearance-none pr-8"
+              >
+                <option value="all">全部釉厚</option>
+                <option value="thin">偏薄</option>
+                <option value="normal">正常</option>
+                <option value="thick">偏厚</option>
+              </select>
+            </div>
+            <button
+              onClick={handleExport}
+              className="btn-primary !py-2 text-sm inline-flex items-center gap-1.5"
+            >
+              <Download className="w-4 h-4" />
+              导出
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-industrial-100">
-                <th className="table-th">批次</th>
-                <th className="table-th">图案</th>
-                <th className="table-th">干燥时间(min)</th>
-                <th className="table-th">釉比重</th>
-                <th className="table-th">施釉量</th>
-                <th className="table-th">釉厚(mm)</th>
-                <th className="table-th">干燥损失(%)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-industrial-50">
-              {glazingRecords.map((record) => (
-                <tr key={record.id} className="hover:bg-industrial-50/50 transition-colors">
-                  <td className="table-td font-mono text-xs text-kiln-600 font-semibold">{record.batchNo}</td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-md bg-gradient-to-br from-gold-100 to-kiln-100 border border-gold-200 flex items-center justify-center">
-                        <Palette className="w-3.5 h-3.5 text-kiln-600" />
-                      </span>
-                      <span className="font-medium text-industrial-800">{record.patternName}</span>
-                    </div>
-                  </td>
-                  <td className="table-td font-mono">{record.dryingTime.toFixed(1)}</td>
-                  <td className="table-td">
-                    <span className={`font-mono font-semibold ${
-                      record.glazeDensity > 1.6 || record.glazeDensity < 1.4 ? 'text-amber-600' : 'text-emerald-600'
-                    }`}>
-                      {record.glazeDensity.toFixed(3)}
-                    </span>
-                  </td>
-                  <td className="table-td font-mono">{record.glazeAmount.toFixed(0)} g/m²</td>
-                  <td className="table-td">
-                    <div className="flex items-center gap-2">
-                      <div className="w-16 h-2 rounded-full bg-industrial-200 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-blue-500 to-kiln-500"
-                          style={{ width: `${(record.glazeThickness / 1.0) * 100}%` }}
-                        />
-                      </div>
-                      <span className="font-mono font-semibold text-industrial-700 w-12">{record.glazeThickness.toFixed(2)}</span>
-                    </div>
-                  </td>
-                  <td className="table-td">
-                    <span className={`font-mono font-semibold ${
-                      record.dryingLoss > 0.6 ? 'text-kiln-600' : 'text-emerald-600'
-                    }`}>
-                      {record.dryingLoss.toFixed(2)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<GlazingRecord>
+          columns={columns}
+          data={filteredRecords}
+          rowKey="id"
+        />
 
         <div className="px-5 py-4 border-t border-industrial-100 flex items-center justify-between text-sm text-industrial-500">
-          <span>共 {glazingRecords.length} 条记录</span>
+          <span>
+            显示 {filteredRecords.length} / 共 {glazingRecords.length} 条记录
+          </span>
           <div className="flex items-center gap-1">
             <button className="btn-secondary !py-1.5 !px-3 text-xs">上一页</button>
             <span className="px-3 py-1.5 text-kiln-600 font-semibold">1</span>

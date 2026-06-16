@@ -148,6 +148,8 @@ export const glazingRecords: GlazingRecord[] = Array.from({ length: 10 }).map((_
   dryingLoss: 0.2 + Math.random() * 0.5,
 }));
 
+const passRates = [94.8, 96.2, 93.5, 95.7, 92.8, 96.9, 94.2, 95.1];
+
 export const kilnFiringRecords: KilnFiringRecord[] = Array.from({ length: 8 }).map((_, i) => ({
   id: generateId(),
   timestamp: randomDate(16),
@@ -168,6 +170,7 @@ export const kilnFiringRecords: KilnFiringRecord[] = Array.from({ length: 8 }).m
   kilnPressure: 12 + Math.random() * 8,
   maxTemp: 1200 + Math.random() * 30,
   fuelConsumption: 2.8 + Math.random() * 0.8,
+  passRate: passRates[i],
 }));
 
 export const polishingRecords: PolishingRecord[] = Array.from({ length: 10 }).map((_, i) => ({

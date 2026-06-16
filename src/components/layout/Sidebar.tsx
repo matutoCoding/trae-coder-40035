@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Factory,
+  GitBranch,
 } from "lucide-react";
 import { useAppStore } from "../../store/productionStore";
 import type { ModuleKey } from "../../types";
@@ -23,6 +24,7 @@ const navItems: { key: ModuleKey; label: string; icon: typeof LayoutDashboard; a
   { key: "kiln-firing", label: "辊道窑烧成", icon: Flame, accent: "from-kiln-500 to-kiln-700" },
   { key: "polishing", label: "抛光磨边", icon: Sparkles, accent: "from-violet-500 to-violet-600" },
   { key: "grading-packaging", label: "分级包装", icon: Boxes, accent: "from-emerald-500 to-emerald-600" },
+  { key: "batch-tracking", label: "批次追溯", icon: GitBranch, accent: "from-gold-500 to-gold-600" },
 ];
 
 export default function Sidebar() {
