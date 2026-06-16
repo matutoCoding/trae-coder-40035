@@ -20,6 +20,8 @@ import {
   Info,
   BarChart3,
   Link2,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { useAppStore } from '@/store/productionStore';
 import {
@@ -60,6 +62,51 @@ interface ChainNode {
   grade?: string;
   isOverTemp?: boolean;
 }
+
+interface QualityImpact {
+  name: string;
+  level: 'low' | 'medium' | 'high';
+  direction: 'up' | 'down';
+}
+
+const qualityImpactMap: Record<string, QualityImpact[]> = {
+  'ball-milling': [
+    { name: '变形量', level: 'high', direction: 'up' },
+    { name: '平整度', level: 'medium', direction: 'up' },
+    { name: 'A品率', level: 'medium', direction: 'down' },
+    { name: '强度', level: 'low', direction: 'down' },
+  ],
+  'spray-drying': [
+    { name: '压制缺陷', level: 'high', direction: 'up' },
+    { name: '重量偏差', level: 'medium', direction: 'up' },
+    { name: '砖坯密度', level: 'medium', direction: 'down' },
+  ],
+  'press-forming': [
+    { name: '平整度', level: 'high', direction: 'up' },
+    { name: '尺寸精度', level: 'high', direction: 'up' },
+    { name: '变形量', level: 'medium', direction: 'up' },
+    { name: 'A品率', level: 'high', direction: 'down' },
+  ],
+  'glazing': [
+    { name: '色差ΔE', level: 'high', direction: 'up' },
+    { name: '釉面质量', level: 'high', direction: 'up' },
+    { name: '光泽度', level: 'medium', direction: 'up' },
+    { name: '针孔', level: 'medium', direction: 'up' },
+  ],
+  'kiln-firing': [
+    { name: 'A品率', level: 'high', direction: 'down' },
+    { name: '色差ΔE', level: 'high', direction: 'up' },
+    { name: '变形量', level: 'high', direction: 'up' },
+    { name: '强度', level: 'medium', direction: 'up' },
+    { name: '平整度', level: 'high', direction: 'up' },
+  ],
+  'polishing': [
+    { name: '光泽度', level: 'high', direction: 'up' },
+    { name: '平面度', level: 'medium', direction: 'up' },
+    { name: '尺寸精度', level: 'low', direction: 'up' },
+  ],
+  'grading': [],
+};
 
 const processStages = [
   { key: 'ball-milling', name: '原料球磨', icon: FlaskConical, color: 'text-blue-600', bg: 'bg-blue-500', bgLight: 'bg-blue-50', border: 'border-blue-200' },
@@ -273,7 +320,9 @@ export default function BatchTracking() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBatch, setSelectedBatch] = useState<string>(completeBatches[0] || allBatches[0] || '');
   const [highlightStep, setHighlightStep] = useState<string | null>(null);
+  const [selectedChainNode, setSelectedChainNode] = useState<string | null>(null);
   const setActiveModule = useAppStore((s) => s.setActiveModule);
+  const setSelectedBatchForAnalysis = useAppStore((s) => s.setSelectedBatchForAnalysis);
 
   const filteredBatches = useMemo(() => {
     if (!searchTerm) return allBatches;
@@ -840,7 +889,10 @@ export default function BatchTracking() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setActiveModule('quality-analysis')}
+                  onClick={() => {
+                    setSelectedBatchForAnalysis(selectedBatch);
+                    setActiveModule('quality-analysis');
+                  }}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-kiln-500 to-gold-500 text-white text-sm font-medium shadow-sm hover:shadow-md hover:from-kiln-600 hover:to-gold-600 transition-all"
                 >
                   <BarChart3 className="w-4 h-4" />
@@ -853,6 +905,21 @@ export default function BatchTracking() {
                 {chainNodes.map((node, idx) => {
                   const NodeIcon = node.icon;
                   const isLast = idx === chainNodes.length - 1;
+                  const isSelected = selectedChainNode === node.key;
+                  const impacts = qualityImpactMap[node.key] || [];
+                  const hasImpacts = impacts.length > 0;
+
+                  const handleNodeClick = () => {
+                    if (!hasImpacts) return;
+                    if (isSelected) {
+                      setSelectedChainNode(null);
+                      setHighlightStep(null);
+                    } else {
+                      setSelectedChainNode(node.key);
+                      setHighlightStep(node.key);
+                    }
+                  };
+
                   return (
                     <div key={node.key} className="relative flex gap-4 pb-6">
                       {!isLast && (
@@ -863,7 +930,14 @@ export default function BatchTracking() {
 
                       <div className="relative z-10 flex-shrink-0">
                         <div
-                          className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm ${
+                          onClick={handleNodeClick}
+                          className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm transition-all ${
+                            hasImpacts ? 'cursor-pointer' : 'cursor-default'
+                          } ${
+                            isSelected
+                              ? 'ring-2 ring-gold-400 ring-offset-2 scale-105'
+                              : ''
+                          } ${
                             node.isKey
                               ? 'bg-gradient-to-br from-kiln-500 to-gold-500 text-white ring-2 ring-gold-300 ring-offset-2'
                               : node.isAbnormal
@@ -877,62 +951,159 @@ export default function BatchTracking() {
                         </div>
                       </div>
 
-                      <div
-                        className={`flex-1 rounded-xl p-4 ${
-                          node.isResult && node.isAbnormal
-                            ? 'bg-gradient-to-r from-rose-50 to-rose-100/50 border border-rose-200'
-                            : node.isKey
-                            ? 'bg-gradient-to-r from-kiln-50 to-gold-50 border border-gold-200'
-                            : node.isAbnormal
-                            ? node.abnormalLevel === 'critical'
-                              ? 'bg-rose-50 border border-rose-200'
-                              : 'bg-amber-50 border border-amber-200'
-                            : 'bg-industrial-50 border border-industrial-100'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`font-semibold ${
-                                node.isKey ? 'text-kiln-700' : node.isAbnormal ? (node.abnormalLevel === 'critical' ? 'text-rose-700' : 'text-amber-700') : 'text-industrial-800'
-                              }`}
-                            >
-                              {node.name}
-                            </span>
-                            {node.isKey && (
-                              <span className="badge bg-gold-100 text-gold-700 border border-gold-200 text-[10px]">
-                                关键节点
-                              </span>
-                            )}
-                            {node.isAbnormal && node.abnormalLevel && (
-                              <span
-                                className={`badge text-[10px] ${
-                                  node.abnormalLevel === 'critical'
-                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                                    : 'bg-amber-100 text-amber-700 border border-amber-200'
-                                }`}
-                              >
-                                {node.abnormalLevel === 'critical' ? 'CRITICAL' : 'WARNING'}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs text-industrial-500 font-mono">{node.time}</span>
-                        </div>
+                      <div className="flex-1">
                         <div
-                          className={`mt-2 text-sm ${
-                            node.isOverTemp
-                              ? 'text-rose-600 font-semibold'
+                          onClick={handleNodeClick}
+                          className={`rounded-xl p-4 transition-all ${
+                            hasImpacts ? 'cursor-pointer hover:shadow-md' : 'cursor-default'
+                          } ${
+                            isSelected
+                              ? 'border-2 border-gold-400 bg-gold-50/80 shadow-md'
+                              : node.isResult && node.isAbnormal
+                              ? 'bg-gradient-to-r from-rose-50 to-rose-100/50 border border-rose-200'
                               : node.isKey
-                              ? 'text-kiln-700'
+                              ? 'bg-gradient-to-r from-kiln-50 to-gold-50 border border-gold-200'
                               : node.isAbnormal
                               ? node.abnormalLevel === 'critical'
-                                ? 'text-rose-700 font-semibold'
-                                : 'text-amber-700 font-medium'
-                              : 'text-industrial-700'
+                                ? 'bg-rose-50 border border-rose-200'
+                                : 'bg-amber-50 border border-amber-200'
+                              : 'bg-industrial-50 border border-industrial-100'
                           }`}
                         >
-                          {node.content}
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-semibold ${
+                                  isSelected
+                                    ? 'text-gold-700'
+                                    : node.isKey
+                                    ? 'text-kiln-700'
+                                    : node.isAbnormal
+                                    ? node.abnormalLevel === 'critical'
+                                      ? 'text-rose-700'
+                                      : 'text-amber-700'
+                                    : 'text-industrial-800'
+                                }`}
+                              >
+                                {node.name}
+                              </span>
+                              {node.isKey && (
+                                <span className="badge bg-gold-100 text-gold-700 border border-gold-200 text-[10px]">
+                                  关键节点
+                                </span>
+                              )}
+                              {node.isAbnormal && node.abnormalLevel && (
+                                <span
+                                  className={`badge text-[10px] ${
+                                    node.abnormalLevel === 'critical'
+                                      ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                      : 'bg-amber-100 text-amber-700 border border-amber-200'
+                                  }`}
+                                >
+                                  {node.abnormalLevel === 'critical' ? 'CRITICAL' : 'WARNING'}
+                                </span>
+                              )}
+                              {isSelected && (
+                                <span className="badge bg-gold-400 text-white border border-gold-300 text-[10px]">
+                                  已选中
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs text-industrial-500 font-mono">{node.time}</span>
+                          </div>
+                          <div
+                            className={`mt-2 text-sm ${
+                              isSelected
+                                ? 'text-gold-700 font-medium'
+                                : node.isOverTemp
+                                ? 'text-rose-600 font-semibold'
+                                : node.isKey
+                                ? 'text-kiln-700'
+                                : node.isAbnormal
+                                ? node.abnormalLevel === 'critical'
+                                  ? 'text-rose-700 font-semibold'
+                                  : 'text-amber-700 font-medium'
+                                : 'text-industrial-700'
+                            }`}
+                          >
+                            {node.content}
+                          </div>
                         </div>
+
+                        {isSelected && hasImpacts && (
+                          <div className="mt-3 ml-2 p-4 rounded-xl bg-white border-2 border-gold-200 shadow-inner">
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="w-1 h-4 bg-gradient-to-b from-gold-400 to-kiln-400 rounded-full" />
+                              <span className="text-sm font-semibold text-industrial-800">可能影响的质量指标</span>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {impacts.map((impact, i) => {
+                                const levelBars = impact.level === 'high' ? 3 : impact.level === 'medium' ? 2 : 1;
+                                const isGood = impact.direction === 'down' && impact.name.includes('A品率');
+                                const isBad = impact.direction === 'up';
+                                return (
+                                  <div
+                                    key={i}
+                                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-industrial-50 border border-industrial-100"
+                                  >
+                                    <span className="text-xs font-medium text-industrial-700">{impact.name}</span>
+                                    <div className="flex items-center gap-1.5">
+                                      <div className="flex gap-0.5">
+                                        {[1, 2, 3].map((bar) => (
+                                          <div
+                                            key={bar}
+                                            className={`w-1.5 rounded-full transition-all ${
+                                              bar <= levelBars
+                                                ? impact.level === 'high'
+                                                  ? 'bg-rose-500 h-4'
+                                                  : impact.level === 'medium'
+                                                  ? 'bg-amber-500 h-3'
+                                                  : 'bg-emerald-500 h-2'
+                                                : 'bg-industrial-200 h-2'
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                      <div
+                                        className={`flex items-center gap-0.5 text-xs font-semibold ${
+                                          isBad ? 'text-rose-600' : 'text-emerald-600'
+                                        }`}
+                                      >
+                                        {impact.direction === 'up' ? (
+                                          <ArrowUp className="w-3 h-3" />
+                                        ) : (
+                                          <ArrowDown className="w-3 h-3" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-3 flex items-center gap-4 text-[10px] text-industrial-500">
+                              <div className="flex items-center gap-1">
+                                <div className="w-1.5 h-2 rounded-full bg-emerald-500" />
+                                <span>低</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-1.5 h-3 rounded-full bg-amber-500" />
+                                <span>中</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-1.5 h-4 rounded-full bg-rose-500" />
+                                <span>高</span>
+                              </div>
+                              <div className="flex items-center gap-1 ml-auto">
+                                <ArrowUp className="w-3 h-3 text-rose-500" />
+                                <span>上升/变差</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <ArrowDown className="w-3 h-3 text-emerald-500" />
+                                <span>下降/变好</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

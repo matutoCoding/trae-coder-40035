@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -11,7 +11,7 @@ import BatchDetailModal from '@/components/kiln/BatchDetailModal';
 import DataTable from '@/components/common/DataTable';
 import { kilnFiringRecords } from '@/utils/mockData';
 import type { KilnFiringRecord } from '@/types';
-import { Flame, ThermometerSun, Gauge, Wind, Timer, Settings, Minus, Plus, Zap, AlertTriangle, Search, Download, Eye, Save, Trash2, Check } from 'lucide-react';
+import { Flame, ThermometerSun, Gauge, Wind, Timer, Settings, Minus, Plus, Zap, AlertTriangle, Search, Download, Eye, Save, Trash2, Check, Pencil, Target, Shield, BarChart3 } from 'lucide-react';
 
 interface ControlParam {
   key: string;
@@ -33,6 +33,10 @@ interface ProcessScheme {
   description: string;
   params: { key: string; value: number }[];
   color: string;
+  note?: string;
+  applicableSpecs?: string[];
+  recommendScenario?: string;
+  createdAt?: string;
 }
 
 const presetSchemes: ProcessScheme[] = [
@@ -48,6 +52,10 @@ const presetSchemes: ProcessScheme[] = [
       { key: 'airFuelRatio', value: 10.8 },
     ],
     color: '#10B981',
+    note: '基线工艺，稳定可靠',
+    applicableSpecs: [],
+    recommendScenario: '常规生产',
+    createdAt: '2024-01-01',
   },
   {
     id: 'scheme-b',
@@ -61,6 +69,10 @@ const presetSchemes: ProcessScheme[] = [
       { key: 'airFuelRatio', value: 11.2 },
     ],
     color: '#C8381F',
+    note: '致密性好，强度高',
+    applicableSpecs: ['600×1200', '750×1500'],
+    recommendScenario: '高端产品/出口订单',
+    createdAt: '2024-01-15',
   },
   {
     id: 'scheme-c',
@@ -74,11 +86,37 @@ const presetSchemes: ProcessScheme[] = [
       { key: 'airFuelRatio', value: 10.5 },
     ],
     color: '#3B82F6',
+    note: '产能高，能耗低',
+    applicableSpecs: ['800×800', '600×600'],
+    recommendScenario: '快销/大批量',
+    createdAt: '2024-02-01',
   },
 ];
 
+const STORAGE_KEY = 'kiln-process-schemes';
+
+const loadSchemes = (): ProcessScheme[] => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load schemes from localStorage', e);
+  }
+  return presetSchemes;
+};
+
 export default function KilnFiring() {
-  const [schemes, setSchemes] = useState<ProcessScheme[]>(presetSchemes);
+  const [schemes, setSchemes] = useState<ProcessScheme[]>(loadSchemes);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(schemes));
+    } catch (e) {
+      console.error('Failed to save schemes to localStorage', e);
+    }
+  }, [schemes]);
   const [params, setParams] = useState<ControlParam[]>([
     { key: 'kilnSpeed', label: '窑速调节', value: 9.6, min: 5, max: 15, step: 0.1, unit: 'm/min', icon: Timer, color: 'text-kiln-600', bg: 'bg-kiln-500', iconBg: 'bg-kiln-50' },
     { key: 'maxTemp', label: '最高温度', value: 1230, min: 1180, max: 1280, step: 5, unit: '℃', icon: ThermometerSun, color: 'text-orange-600', bg: 'bg-gradient-to-r from-orange-500 to-kiln-500', iconBg: 'bg-orange-50' },
@@ -147,6 +185,34 @@ export default function KilnFiring() {
     return '低';
   };
 
+  const calcStabilityScore = (maxTemp: number, firingTime: number, oxygenLevel: number) => {
+    let score = 60;
+    const tempOk = maxTemp >= 1220 && maxTemp <= 1240;
+    const timeOk = firingTime >= 60 && firingTime <= 68;
+    const oxyOk = oxygenLevel >= 2.5 && oxygenLevel <= 4.0;
+    if (tempOk) score += 15;
+    if (timeOk) score += 12;
+    if (oxyOk) score += 13;
+    const tempDeviation = Math.max(0, Math.abs(maxTemp - 1230) - 10);
+    const timeDeviation = Math.max(0, Math.abs(firingTime - 64) - 6);
+    const oxyDeviation = Math.max(0, Math.abs(oxygenLevel - 3.2) - 1);
+    score -= tempDeviation * 0.8 + timeDeviation * 0.6 + oxyDeviation * 3;
+    return Math.max(50, Math.min(98, score));
+  };
+
+  const getRiskPoints = (maxTemp: number, firingTime: number, kilnSpeed: number, oxygenLevel: number) => {
+    const points: string[] = [];
+    if (maxTemp > 1240) points.push('超温风险高，易出现过烧变形');
+    if (maxTemp < 1220) points.push('温度偏低，可能导致生烧、强度不足');
+    if (firingTime < 58) points.push('烧成周期短，物理化学反应不充分');
+    if (firingTime > 70) points.push('烧成周期长，产能下降、能耗升高');
+    if (kilnSpeed > 11) points.push('窑速快，砖坯受热不均风险增大');
+    if (oxygenLevel < 2.5) points.push('氧含量偏低，还原气氛可能导致色差');
+    if (oxygenLevel > 4.5) points.push('氧含量偏高，燃料浪费、氧化过度');
+    if (points.length === 0) points.push('工艺参数合理，风险可控');
+    return points.slice(0, 2);
+  };
+
   const isCurrentScheme = (scheme: ProcessScheme) => {
     const keys = ['maxTemp', 'kilnSpeed', 'firingTime', 'oxygenLevel', 'airFuelRatio'];
     return keys.every((key) => {
@@ -176,6 +242,8 @@ export default function KilnFiring() {
     const userInput = window.prompt('请输入方案名称：', defaultName);
     if (userInput === null) return;
     const name = userInput.trim() || defaultName;
+    const noteInput = window.prompt('请输入方案备注（可选）：', '');
+    const note = noteInput?.trim() || undefined;
     const palette = ['#8B5CF6', '#F97316', '#EC4899', '#06B6D4', '#84CC16'];
     const color = palette[customCount % palette.length];
     const newScheme: ProcessScheme = {
@@ -184,6 +252,8 @@ export default function KilnFiring() {
       description: '用户自定义保存的工艺参数',
       params: schemeParams,
       color,
+      note,
+      createdAt: new Date().toISOString().split('T')[0],
     };
     setSchemes((prev) => [...prev, newScheme]);
   };
@@ -191,6 +261,25 @@ export default function KilnFiring() {
   const handleDeleteScheme = (id: string) => {
     if (!window.confirm('确定要删除此方案吗？')) return;
     setSchemes((prev) => prev.filter((s) => s.id !== id));
+    setSelectedSchemeIds((prev) => prev.filter((sid) => sid !== id));
+  };
+
+  const [selectedSchemeIds, setSelectedSchemeIds] = useState<string[]>([]);
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedSchemeIds((prev) =>
+      prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]
+    );
+  };
+
+  const handleEditNote = (scheme: ProcessScheme) => {
+    const newNote = window.prompt('编辑方案备注：', scheme.note || '');
+    if (newNote === null) return;
+    setSchemes((prev) =>
+      prev.map((s) =>
+        s.id === scheme.id ? { ...s, note: newNote.trim() || undefined } : s
+      )
+    );
   };
 
   const filteredRecords = useMemo(() => {
@@ -340,10 +429,15 @@ export default function KilnFiring() {
               <p className="text-xs text-industrial-500 mt-0.5">保存多组参数方案，并排对比温度曲线与指标表现</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="badge bg-kiln-50 text-kiln-700 border border-kiln-200 text-xs">
               {schemes.length} 个方案
             </span>
+            {selectedSchemeIds.length > 0 && (
+              <span className="badge bg-blue-50 text-blue-700 border border-blue-200 text-xs">
+                已选 {selectedSchemeIds.length} 个方案对比
+              </span>
+            )}
             <button
               onClick={handleSaveScheme}
               className="btn-primary !py-2 text-sm inline-flex items-center gap-1.5"
@@ -377,13 +471,28 @@ export default function KilnFiring() {
                 : riskLevel === '中' ? 'text-gold-600 bg-gold-50 border-gold-200'
                 : 'text-kiln-600 bg-kiln-50 border-kiln-200';
 
+              const isSelected = selectedSchemeIds.includes(scheme.id);
+              const hasSpecs = scheme.applicableSpecs && scheme.applicableSpecs.length > 0;
+
               return (
                 <div
                   key={scheme.id}
-                  className={`w-80 flex-shrink-0 rounded-xl border-2 bg-white transition-all ${
-                    isCurrent ? 'border-emerald-500 shadow-lg shadow-emerald-100/50' : 'border-industrial-100 hover:border-industrial-200 hover:shadow-md'
+                  className={`w-80 flex-shrink-0 rounded-xl border-2 bg-white transition-all relative group ${
+                    isCurrent ? 'border-emerald-500 shadow-lg shadow-emerald-100/50' : 
+                    isSelected ? 'border-blue-400 shadow-md shadow-blue-100/50' :
+                    'border-industrial-100 hover:border-industrial-200 hover:shadow-md'
                   }`}
                 >
+                  <div className="absolute -left-2 -top-2 z-10">
+                    <label className="cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelect(scheme.id)}
+                        className="w-5 h-5 rounded-md border-2 border-industrial-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer"
+                      />
+                    </label>
+                  </div>
                   <div className="p-4 border-b border-industrial-100">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -412,6 +521,12 @@ export default function KilnFiring() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
+                    {scheme.recommendScenario && (
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-kiln-500" />
+                        <span className="text-[11px] text-industrial-600">{scheme.recommendScenario}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="px-4 py-3 border-b border-industrial-100 bg-industrial-50/50">
@@ -459,6 +574,43 @@ export default function KilnFiring() {
                     </div>
                   </div>
 
+                  <div className="px-4 pb-2">
+                    <div className="text-[10px] text-industrial-500 mb-1.5">适用规格</div>
+                    <div className="flex flex-wrap gap-1">
+                      {hasSpecs ? (
+                        scheme.applicableSpecs!.map((spec) => (
+                          <span key={spec} className="badge bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-1.5 py-0.5">
+                            {spec}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] px-1.5 py-0.5">
+                          全规格
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="px-4 pb-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        {scheme.note && (
+                          <p className="text-xs text-industrial-400 italic line-clamp-2">{scheme.note}</p>
+                        )}
+                        {!scheme.note && (
+                          <p className="text-xs text-industrial-300 italic">暂无备注</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleEditNote(scheme)}
+                        className="p-1 rounded text-industrial-400 hover:text-kiln-600 hover:bg-kiln-50 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
+                        title="编辑备注"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="px-4 pb-4">
                     <button
                       onClick={() => handleApplyScheme(scheme)}
@@ -484,6 +636,185 @@ export default function KilnFiring() {
             })}
           </div>
         </div>
+
+        {selectedSchemeIds.length >= 2 && selectedSchemeIds.length <= 3 && (() => {
+          const selectedSchemes = schemes.filter((s) => selectedSchemeIds.includes(s.id));
+          
+          const schemeAnalysis = selectedSchemes.map((scheme) => {
+            const sMaxTemp = getSchemeParam(scheme, 'maxTemp');
+            const sKilnSpeed = getSchemeParam(scheme, 'kilnSpeed');
+            const sFiringTime = getSchemeParam(scheme, 'firingTime');
+            const sOxygenLevel = getSchemeParam(scheme, 'oxygenLevel');
+            const sAirFuelRatio = getSchemeParam(scheme, 'airFuelRatio');
+            const energyIdx = calcEnergyIndex(sMaxTemp, sFiringTime, sKilnSpeed, sAirFuelRatio);
+            const energyBaseIdx = calcEnergyIndex(defaultMaxTemp, defaultFiringTime, defaultKilnSpeed, defaultAirFuel);
+            const energyDelta = ((energyIdx - energyBaseIdx) / energyBaseIdx) * 100;
+            const stabilityScore = calcStabilityScore(sMaxTemp, sFiringTime, sOxygenLevel);
+            const passRate = calcPassRate(sMaxTemp, sFiringTime);
+            const riskLevel = calcRiskLevel(sMaxTemp, sFiringTime, sKilnSpeed);
+            const riskPoints = getRiskPoints(sMaxTemp, sFiringTime, sKilnSpeed, sOxygenLevel);
+            return { scheme, energyDelta, stabilityScore, passRate, riskLevel, riskPoints };
+          });
+
+          const minEnergyIdx = Math.min(...schemeAnalysis.map((a) => a.energyDelta));
+          const maxEnergyIdx = Math.max(...schemeAnalysis.map((a) => a.energyDelta));
+          const maxStability = Math.max(...schemeAnalysis.map((a) => a.stabilityScore));
+          const minStability = Math.min(...schemeAnalysis.map((a) => a.stabilityScore));
+
+          const getRecommendSummary = () => {
+            const balanced = schemeAnalysis.find((a) => a.stabilityScore >= 85 && Math.abs(a.energyDelta) <= 5);
+            const lowEnergy = schemeAnalysis.find((a) => a.energyDelta === minEnergyIdx);
+            if (balanced && lowEnergy && balanced.scheme.id !== lowEnergy.scheme.id) {
+              return `综合推荐：${balanced.scheme.name} 平衡了质量与能耗，适合常规生产；若追求产能可选${lowEnergy.scheme.name}，但需关注合格率下降风险。`;
+            }
+            if (balanced) {
+              return `综合推荐：${balanced.scheme.name} 在质量稳定性与能耗控制方面表现均衡，是稳妥的选择。`;
+            }
+            return `综合推荐：请根据实际生产需求，在质量稳定性与能耗之间做出权衡。`;
+          };
+
+          const maxEnergyBarValue = Math.max(...schemeAnalysis.map((a) => Math.abs(a.energyDelta)), 10);
+
+          return (
+            <div className="border-t border-industrial-100 p-5 bg-gradient-to-b from-industrial-50/30 to-white">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-kiln-50 to-orange-50 border border-kiln-100 flex items-center justify-center text-kiln-600">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-semibold text-industrial-900">方案对比分析结论</h3>
+                  <p className="text-xs text-industrial-500 mt-0.5">从能耗、质量稳定性、风险三个维度综合评估</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Zap className="w-5 h-5 text-kiln-500" />
+                    <h4 className="font-semibold text-industrial-800">能耗对比</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {schemeAnalysis.map((item) => {
+                      const isLowest = item.energyDelta === minEnergyIdx && schemeAnalysis.length > 1;
+                      const isHighest = item.energyDelta === maxEnergyIdx && schemeAnalysis.length > 1 && minEnergyIdx !== maxEnergyIdx;
+                      const barWidth = Math.abs(item.energyDelta) / maxEnergyBarValue * 100;
+                      return (
+                        <div key={item.scheme.id}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-industrial-700 truncate flex-1 mr-2">{item.scheme.name}</span>
+                            <span className={`text-xs font-mono font-bold ${item.energyDelta > 0 ? 'text-kiln-600' : 'text-emerald-600'}`}>
+                              {item.energyDelta > 0 ? '+' : ''}{item.energyDelta.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="h-5 bg-industrial-100 rounded-md overflow-hidden flex">
+                            {item.energyDelta >= 0 ? (
+                              <div
+                                className="h-full rounded-md transition-all"
+                                style={{ width: `${barWidth}%`, backgroundColor: item.scheme.color }}
+                              />
+                            ) : (
+                              <div className="flex-1 flex justify-end">
+                                <div
+                                  className="h-full rounded-md transition-all"
+                                  style={{ width: `${barWidth}%`, backgroundColor: item.scheme.color }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex justify-end mt-1 gap-2">
+                            {isLowest && (
+                              <span className="text-[10px] text-emerald-600 font-medium">最省能耗</span>
+                            )}
+                            {isHighest && (
+                              <span className="text-[10px] text-kiln-600 font-medium">能耗最高</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Shield className="w-5 h-5 text-emerald-500" />
+                    <h4 className="font-semibold text-industrial-800">质量稳定性</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {schemeAnalysis.map((item) => {
+                      const isBest = item.stabilityScore === maxStability && schemeAnalysis.length > 1;
+                      const isWorst = item.stabilityScore === minStability && schemeAnalysis.length > 1 && maxStability !== minStability;
+                      return (
+                        <div key={item.scheme.id}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-industrial-700 truncate flex-1 mr-2">{item.scheme.name}</span>
+                            <span className={`text-xs font-mono font-bold ${item.stabilityScore >= 85 ? 'text-emerald-600' : item.stabilityScore >= 75 ? 'text-gold-600' : 'text-kiln-600'}`}>
+                              {item.stabilityScore.toFixed(0)}分
+                            </span>
+                          </div>
+                          <div className="h-5 bg-industrial-100 rounded-md overflow-hidden">
+                            <div
+                              className="h-full rounded-md transition-all"
+                              style={{
+                                width: `${item.stabilityScore}%`,
+                                backgroundColor: item.stabilityScore >= 85 ? '#10B981' : item.stabilityScore >= 75 ? '#D4A547' : '#C8381F',
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1">
+                            <span className="text-[10px] text-industrial-500">预计合格 {item.passRate.toFixed(1)}%</span>
+                            <div className="flex gap-2">
+                              {isBest && <span className="text-[10px] text-emerald-600 font-medium">最稳定</span>}
+                              {isWorst && <span className="text-[10px] text-kiln-600 font-medium">波动风险高</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="card p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <AlertTriangle className="w-5 h-5 text-gold-500" />
+                    <h4 className="font-semibold text-industrial-800">风险评估</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {schemeAnalysis.map((item) => {
+                      const riskColor = item.riskLevel === '低' ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                        : item.riskLevel === '中' ? 'text-gold-600 bg-gold-50 border-gold-200'
+                        : 'text-kiln-600 bg-kiln-50 border-kiln-200';
+                      return (
+                        <div key={item.scheme.id} className="p-2 rounded-lg bg-industrial-50">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-medium text-industrial-700 truncate">{item.scheme.name}</span>
+                            <span className={`badge text-[10px] px-1.5 py-0.5 border ${riskColor}`}>
+                              {item.riskLevel}风险
+                            </span>
+                          </div>
+                          <ul className="space-y-0.5">
+                            {item.riskPoints.map((point, idx) => (
+                              <li key={idx} className="text-[11px] text-industrial-500 flex items-start gap-1">
+                                <span className="w-1 h-1 rounded-full bg-industrial-400 mt-1.5 flex-shrink-0" />
+                                <span>{point}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-gradient-to-r from-kiln-50 via-orange-50 to-gold-50 rounded-xl border border-kiln-100">
+                <p className="text-sm text-industrial-700 leading-relaxed">
+                  {getRecommendSummary()}
+                </p>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="card">

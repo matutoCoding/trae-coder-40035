@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
+import { useAppStore } from '@/store/productionStore';
 import {
   BarChart3,
   TrendingUp,
@@ -115,7 +116,19 @@ const bubbleMatrix: { row: string; col: string; count: number; highlight: boolea
   ],
 ];
 
-const anomalyList = [
+interface AnomalyItem {
+  level: 'critical' | 'warning' | 'info';
+  desc: string;
+  batches: number;
+  suggestion: string;
+}
+
+interface FilteredAnomaly extends AnomalyItem {
+  relevance: 'high' | 'medium' | 'low';
+  displayBatches: number;
+}
+
+const anomalyList: AnomalyItem[] = [
   { level: 'critical', desc: '烧成温度>1250℃ 且 周期<58min 组合，次品率上升12%', batches: 8, suggestion: '降低最高温至1230℃以下，延长周期至62min以上' },
   { level: 'critical', desc: '球磨细度>1.8% 且 粉料水分>7% 时，压制缺陷率激增', batches: 6, suggestion: '严格控制球磨细度1.2-1.6%，粉料水分6.0-6.5%' },
   { level: 'warning', desc: '窑速>10.5m/min 时，A品率下降约4.5%', batches: 12, suggestion: '窑速建议控制在9.2-10.0m/min区间' },
@@ -177,6 +190,17 @@ export default function QualityAnalysis() {
   const [batchSearch, setBatchSearch] = useState('');
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
 
+  const { selectedBatchForAnalysis, setSelectedBatchForAnalysis } = useAppStore();
+
+  useEffect(() => {
+    if (selectedBatchForAnalysis) {
+      setBatchSearch(selectedBatchForAnalysis);
+      setExpandedBatch(selectedBatchForAnalysis);
+      setTimeRange('近30日');
+      setSelectedBatchForAnalysis(null);
+    }
+  }, [selectedBatchForAnalysis, setSelectedBatchForAnalysis]);
+
   const filteredData = useMemo(() => {
     return scatterData.filter((d) => {
       if (batchSearch && !d.batch.includes(batchSearch)) return false;
@@ -201,6 +225,63 @@ export default function QualityAnalysis() {
     return { avgPass, aRate, avgEnergy, anomalyCount: String(anomalyCount) };
   }, [filteredData]);
 
+  const filteredAnomalies = useMemo<FilteredAnomaly[]>(() => {
+    if (filteredData.length === 0) {
+      return anomalyList.map((a) => ({ ...a, relevance: 'low' as const, displayBatches: 1 }));
+    }
+
+    const totalBatches = rawScatterData.length;
+    const ratio = filteredData.length / totalBatches;
+
+    const highTempCount = filteredData.filter((d) => d.x > 1240).length;
+    const highTempRatio = highTempCount / filteredData.length;
+
+    const lowGradeCount = filteredData.filter((d) => d.grade === 'C' || d.grade === 'D').length;
+    const lowGradeRatio = lowGradeCount / filteredData.length;
+
+    const avgPass = filteredData.reduce((s, d) => s + d.y, 0) / filteredData.length;
+    const isHighQuality = avgPass >= 96;
+
+    return anomalyList
+      .map((item) => {
+        let relevance: 'high' | 'medium' | 'low' = 'medium';
+
+        if (item.level === 'critical') {
+          if (highTempRatio > 0.3 && item.desc.includes('烧成温度')) {
+            relevance = 'high';
+          } else if (lowGradeRatio > 0.2) {
+            relevance = 'high';
+          } else if (isHighQuality) {
+            relevance = 'low';
+          }
+        } else if (item.level === 'warning') {
+          if (lowGradeRatio > 0.3) {
+            relevance = 'high';
+          } else if (isHighQuality) {
+            relevance = 'low';
+          }
+        } else {
+          if (isHighQuality) {
+            relevance = 'medium';
+          } else if (lowGradeRatio > 0.3) {
+            relevance = 'low';
+          }
+        }
+
+        const displayBatches = Math.max(1, Math.ceil(item.batches * ratio));
+
+        return { ...item, relevance, displayBatches };
+      })
+      .sort((a, b) => {
+        const rank = { high: 0, medium: 1, low: 2 };
+        return rank[a.relevance] - rank[b.relevance];
+      });
+  }, [filteredData]);
+
+  const anomalyBadgeCount = useMemo(() => {
+    return filteredAnomalies.filter((a) => a.relevance !== 'low').length;
+  }, [filteredAnomalies]);
+
   const toggleGrade = (grade: string) => {
     if (grade === '全部') {
       setSelectedGrades(['全部']);
@@ -213,6 +294,13 @@ export default function QualityAnalysis() {
         setSelectedGrades([...filtered, grade]);
       }
     }
+  };
+
+  const getBatchDetail = (batch: string) => {
+    const scatterItem = scatterData.find((d) => d.batch === batch);
+    const kilnRec = kilnFiringRecords.find((r) => r.batchNo === batch);
+    const gradingRec = gradingRecords.find((r) => r.batchNo === batch);
+    return { scatterItem, kilnRec, gradingRec };
   };
 
   const handleExport = () => {
@@ -228,11 +316,404 @@ export default function QualityAnalysis() {
     URL.revokeObjectURL(url);
   };
 
-  const getBatchDetail = (batch: string) => {
-    const scatterItem = scatterData.find((d) => d.batch === batch);
-    const kilnRec = kilnFiringRecords.find((r) => r.batchNo === batch);
-    const gradingRec = gradingRecords.find((r) => r.batchNo === batch);
-    return { scatterItem, kilnRec, gradingRec };
+  const handleGenerateReport = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const displayDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+    const highMidAnomalies = filteredAnomalies.filter((a) => a.relevance !== 'low');
+
+    const getLevelText = (level: string) => {
+      switch (level) {
+        case 'critical': return '严重';
+        case 'warning': return '警告';
+        default: return '提示';
+      }
+    };
+
+    const getLevelColor = (level: string) => {
+      switch (level) {
+        case 'critical': return '#DC2626';
+        case 'warning': return '#F59E0B';
+        default: return '#3B82F6';
+      }
+    };
+
+    let batchDetailHtml = '';
+    if (expandedBatch) {
+      const { scatterItem, kilnRec, gradingRec } = getBatchDetail(expandedBatch);
+      if (scatterItem) {
+        const gradeColor = getGradeColor(scatterItem.grade);
+        batchDetailHtml = `
+          <div class="section">
+            <h2>四、选中批次详情</h2>
+            <table class="detail-table">
+              <tr>
+                <th>批次号</th>
+                <td style="font-family: monospace; font-weight: bold; color: #C8381F;">${scatterItem.batch}</td>
+              </tr>
+              <tr>
+                <th>等级</th>
+                <td style="color: ${gradeColor}; font-weight: bold;">${scatterItem.grade}品</td>
+              </tr>
+              <tr>
+                <th>产品规格</th>
+                <td>${scatterItem.spec}</td>
+              </tr>
+              <tr>
+                <th>工艺类型</th>
+                <td>${scatterItem.processType}</td>
+              </tr>
+            </table>
+            <h3 style="margin-top: 16px;">烧成参数</h3>
+            <table class="detail-table">
+              <tr>
+                <th>最高温度</th>
+                <td>${kilnRec ? kilnRec.maxTemp.toFixed(1) : scatterItem.x} ℃</td>
+              </tr>
+              <tr>
+                <th>窑速</th>
+                <td>${kilnRec ? kilnRec.kilnSpeed.toFixed(2) : (9.5 + (scatterItem.x - 1200) * 0.02).toFixed(2)} m/min</td>
+              </tr>
+              <tr>
+                <th>周期</th>
+                <td>${kilnRec ? kilnRec.totalFiringTime.toFixed(0) : (62 + (scatterItem.x - 1200) * 0.15).toFixed(0)} min</td>
+              </tr>
+              <tr>
+                <th>氧含量</th>
+                <td>${kilnRec ? kilnRec.oxygenLevel.toFixed(1) : (2.5 + (1250 - scatterItem.x) * 0.03).toFixed(1)} %</td>
+              </tr>
+              <tr>
+                <th>单位能耗</th>
+                <td>${scatterItem.z} kcal/kg</td>
+              </tr>
+            </table>
+            <h3 style="margin-top: 16px;">分级结果</h3>
+            <table class="detail-table">
+              <tr>
+                <th>平整度</th>
+                <td>${gradingRec ? gradingRec.flatness.toFixed(3) : (0.1 + (98 - scatterItem.y) * 0.01).toFixed(3)} mm</td>
+              </tr>
+              <tr>
+                <th>直角度</th>
+                <td>${gradingRec ? gradingRec.squareness.toFixed(3) : (0.15 + (98 - scatterItem.y) * 0.012).toFixed(3)} mm</td>
+              </tr>
+              <tr>
+                <th>色差ΔE</th>
+                <td>${gradingRec ? gradingRec.colorDifference.toFixed(2) : (0.4 + (98 - scatterItem.y) * 0.08).toFixed(2)}</td>
+              </tr>
+              <tr>
+                <th>色号</th>
+                <td style="font-family: monospace;">${gradingRec ? gradingRec.colorNo : 'C' + (100 + parseInt(scatterItem.batch.slice(-3)) % 20)}</td>
+              </tr>
+              <tr>
+                <th>数量</th>
+                <td>${gradingRec ? gradingRec.quantity : 600 + (parseInt(scatterItem.batch.slice(-3)) % 400)} 片</td>
+              </tr>
+            </table>
+          </div>
+        `;
+      }
+    }
+
+    const suggestionsHtml = suggestions.map((s, idx) => `
+      <div class="suggestion-item">
+        <span class="suggestion-num">${idx + 1}</span>
+        <div>
+          <div class="suggestion-title">${s.title}</div>
+          <div class="suggestion-desc">${s.desc}</div>
+          <div class="suggestion-effect">预计效果：${s.effect}</div>
+        </div>
+      </div>
+    `).join('');
+
+    const anomaliesHtml = highMidAnomalies.length > 0
+      ? highMidAnomalies.map((item, idx) => `
+          <div class="anomaly-item">
+            <div class="anomaly-header">
+              <span class="anomaly-level" style="background-color: ${getLevelColor(item.level)}20; color: ${getLevelColor(item.level)};">${getLevelText(item.level)}</span>
+              <span class="anomaly-desc">${item.desc}</span>
+            </div>
+            <div class="anomaly-meta">
+              <span>影响批次：<strong>${item.displayBatches}</strong> 批</span>
+              <span>建议措施：${item.suggestion}</span>
+            </div>
+          </div>
+        `).join('')
+      : '<p style="color: #6B7280;">当前筛选条件下暂无高/中相关性异常发现</p>';
+
+    const avgPassNum = parseFloat(kpiValues.avgPass);
+    const passColor = avgPassNum >= 95 ? '#10B981' : avgPassNum >= 92 ? '#F59E0B' : '#DC2626';
+
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>质量关联分析报告</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #f5f5f5;
+      padding: 40px 20px;
+      color: #1A1D21;
+    }
+    .report-container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 50px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      border-radius: 8px;
+    }
+    .report-header {
+      text-align: center;
+      padding-bottom: 30px;
+      border-bottom: 3px solid #C8381F;
+      margin-bottom: 30px;
+    }
+    .report-header h1 {
+      font-size: 28px;
+      font-weight: bold;
+      color: #C8381F;
+      margin-bottom: 10px;
+    }
+    .report-header .subtitle {
+      color: #6B6255;
+      font-size: 14px;
+    }
+    .report-header .gen-time {
+      margin-top: 12px;
+      color: #8B8680;
+      font-size: 13px;
+    }
+    .section {
+      margin-bottom: 35px;
+    }
+    .section h2 {
+      font-size: 18px;
+      font-weight: bold;
+      color: #1A1D21;
+      margin-bottom: 16px;
+      padding-left: 12px;
+      border-left: 4px solid #C8381F;
+    }
+    .section h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .kpi-card {
+      background: #FAFAF7;
+      border: 1px solid #EDEAE4;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .kpi-card .label {
+      font-size: 13px;
+      color: #6B6255;
+      margin-bottom: 8px;
+    }
+    .kpi-card .value {
+      font-size: 24px;
+      font-weight: bold;
+      font-family: 'Times New Roman', serif;
+    }
+    .kpi-card .unit {
+      font-size: 12px;
+      color: #8B8680;
+      margin-left: 2px;
+    }
+    .filter-table, .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    .filter-table th, .detail-table th,
+    .filter-table td, .detail-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid #EDEAE4;
+    }
+    .filter-table th, .detail-table th {
+      width: 120px;
+      background: #FAFAF7;
+      font-weight: 600;
+      color: #554E44;
+    }
+    .anomaly-item {
+      padding: 14px;
+      border: 1px solid #EDEAE4;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      background: #FAFAF7;
+    }
+    .anomaly-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .anomaly-level {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .anomaly-desc {
+      font-weight: 600;
+      font-size: 14px;
+      flex: 1;
+    }
+    .anomaly-meta {
+      font-size: 13px;
+      color: #6B6255;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .suggestion-item {
+      display: flex;
+      gap: 14px;
+      padding: 14px;
+      border: 1px solid #EDEAE4;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      background: #FAFAF7;
+    }
+    .suggestion-num {
+      width: 28px;
+      height: 28px;
+      background: #C8381F;
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .suggestion-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .suggestion-desc {
+      font-size: 13px;
+      color: #554E44;
+      margin-bottom: 6px;
+    }
+    .suggestion-effect {
+      font-size: 12px;
+      color: #10B981;
+      font-weight: 600;
+    }
+    .report-footer {
+      text-align: center;
+      padding-top: 25px;
+      border-top: 1px solid #EDEAE4;
+      font-size: 12px;
+      color: #8B8680;
+      margin-top: 40px;
+    }
+    @media print {
+      body { padding: 0; background: white; }
+      .report-container { box-shadow: none; border-radius: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="report-header">
+      <h1>质量关联分析报告</h1>
+      <div class="subtitle">工艺参数 · 能耗 · 合格率 · 分级结果多维关联分析</div>
+      <div class="gen-time">生成时间：${displayDate}</div>
+    </div>
+
+    <div class="section">
+      <h2>一、筛选条件</h2>
+      <table class="filter-table">
+        <tr>
+          <th>时间段</th>
+          <td>${timeRange}</td>
+        </tr>
+        <tr>
+          <th>产品规格</th>
+          <td>${productSpec}</td>
+        </tr>
+        <tr>
+          <th>等级筛选</th>
+          <td>${selectedGrades.join('、')}</td>
+        </tr>
+        <tr>
+          <th>工艺类型</th>
+          <td>${processType}</td>
+        </tr>
+        <tr>
+          <th>批次号</th>
+          <td>${batchSearch || '全部'}</td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>二、核心指标</h2>
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="label">综合合格率</div>
+          <div class="value" style="color: ${passColor};">${kpiValues.avgPass}<span class="unit">%</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">A品率</div>
+          <div class="value" style="color: #10B981;">${kpiValues.aRate}<span class="unit">%</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">单位能耗</div>
+          <div class="value" style="color: #D97706;">${kpiValues.avgEnergy}<span class="unit">kcal/kg</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">样本批次</div>
+          <div class="value" style="color: #1A1D21;">${filteredData.length}<span class="unit">批</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>三、异常发现摘要</h2>
+      ${anomaliesHtml}
+    </div>
+
+    ${batchDetailHtml}
+
+    <div class="section">
+      <h2>五、工艺建议</h2>
+      ${suggestionsHtml}
+    </div>
+
+    <div class="report-footer">
+      报告由陶瓷生产质量分析系统自动生成
+    </div>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `质量分析报告_${dateStr}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -241,8 +722,11 @@ export default function QualityAnalysis() {
         title="质量关联分析"
         subtitle="工艺参数·能耗·合格率·分级结果多维关联"
         icon={<BarChart3 className="w-5 h-5" />}
-        actions={['refresh', 'export']}
-        onAction={(a) => a === 'export' && handleExport()}
+        actions={['refresh', 'report', 'export']}
+        onAction={(a) => {
+          if (a === 'export') handleExport();
+          if (a === 'report') handleGenerateReport();
+        }}
       />
 
       {/* 筛选区 */}
@@ -625,31 +1109,43 @@ export default function QualityAnalysis() {
             </div>
           </div>
           <span className="badge bg-rose-100 text-rose-700 border border-rose-200 text-xs font-medium">
-            共 {anomalyList.length} 条发现
+            共 {anomalyBadgeCount} 条发现
           </span>
         </div>
 
         <div className="space-y-3">
-          {anomalyList.map((item, idx) => (
+          {filteredAnomalies.map((item, idx) => (
             <div
               key={idx}
               className={`p-4 rounded-xl border transition-all hover:shadow-md ${
+                item.relevance === 'low' ? 'opacity-50' : ''
+              } ${
                 item.level === 'critical'
                   ? 'bg-rose-50/40 border-rose-200'
                   : item.level === 'warning'
                   ? 'bg-amber-50/40 border-amber-200'
                   : 'bg-blue-50/40 border-blue-200'
+              } ${
+                item.relevance === 'high'
+                  ? 'ring-2 ring-rose-300/50 shadow-md'
+                  : ''
               }`}
             >
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     {getLevelBadge(item.level)}
                     <span className="text-sm font-semibold text-industrial-800">{item.desc}</span>
+                    {item.relevance === 'high' && (
+                      <span className="badge bg-rose-500 text-white text-[10px] font-semibold">高相关</span>
+                    )}
+                    {item.relevance === 'medium' && (
+                      <span className="badge bg-amber-500 text-white text-[10px] font-semibold">中相关</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 flex-wrap">
                     <span className="text-xs text-industrial-500">
-                      影响批次: <span className="font-mono font-semibold text-industrial-700">{item.batches}</span> 批
+                      影响批次: <span className="font-mono font-semibold text-industrial-700">{item.displayBatches}</span> 批
                     </span>
                     <span className="text-xs text-industrial-500">
                       建议措施: <span className="text-industrial-700">{item.suggestion}</span>

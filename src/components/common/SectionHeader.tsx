@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { Plus, Download, Filter, RefreshCw } from "lucide-react";
+import { Plus, Download, Filter, RefreshCw, FileText } from "lucide-react";
 
 interface SectionHeaderProps {
   title: string;
   subtitle?: string;
   icon?: ReactNode;
-  actions?: ("add" | "export" | "filter" | "refresh")[];
+  actions?: ("add" | "export" | "filter" | "refresh" | "report")[];
   onAction?: (action: string) => void;
 }
 
@@ -21,6 +21,7 @@ export default function SectionHeader({
     export: { icon: Download, label: "导出Excel", className: "btn-secondary" },
     filter: { icon: Filter, label: "筛选", className: "btn-secondary" },
     refresh: { icon: RefreshCw, label: "刷新", className: "btn-secondary" },
+    report: { icon: FileText, label: "分析报告", className: "btn-secondary" },
   };
 
   return (
