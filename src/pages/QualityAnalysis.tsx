@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import SectionHeader from '@/components/common/SectionHeader';
 import StatCard from '@/components/common/StatCard';
 import {
   BarChart3,
   TrendingUp,
-  TrendingDown,
   Gauge,
   Award,
   Flame,
@@ -14,7 +13,21 @@ import {
   Settings2,
   Droplets,
   Eye,
+  Search,
+  X,
 } from 'lucide-react';
+import { kilnFiringRecords, gradingRecords } from '@/utils/mockData';
+
+interface ScatterPoint {
+  x: number;
+  y: number;
+  z: number;
+  grade: string;
+  batch: string;
+  spec: string;
+  processType: string;
+  daysAgo: number;
+}
 import {
   ScatterChart,
   Scatter,
@@ -26,7 +39,6 @@ import {
   BarChart,
   Bar,
   Cell,
-  Legend,
 } from 'recharts';
 
 const timeRanges = ['今日', '近7日', '近30日'];
@@ -34,32 +46,32 @@ const productSpecs = ['全部', '800×800', '600×1200', '600×600', '750×1500'
 const gradeOptions = ['全部', 'A', 'B', 'C', 'D'];
 const processTypes = ['全部', '高温长周期', '中温标准', '低温快烧'];
 
-const scatterData = [
-  { x: 1195, y: 96.2, z: 285, grade: 'A', batch: 'TC20260617-001' },
-  { x: 1210, y: 97.5, z: 295, grade: 'A', batch: 'TC20260617-002' },
-  { x: 1205, y: 94.8, z: 302, grade: 'B', batch: 'TC20260617-003' },
-  { x: 1220, y: 98.1, z: 308, grade: 'A', batch: 'TC20260617-004' },
-  { x: 1188, y: 89.5, z: 278, grade: 'C', batch: 'TC20260617-005' },
-  { x: 1235, y: 95.6, z: 325, grade: 'A', batch: 'TC20260617-006' },
-  { x: 1228, y: 93.2, z: 318, grade: 'B', batch: 'TC20260617-007' },
-  { x: 1245, y: 91.8, z: 342, grade: 'C', batch: 'TC20260617-008' },
-  { x: 1215, y: 96.8, z: 300, grade: 'A', batch: 'TC20260617-009' },
-  { x: 1198, y: 92.5, z: 288, grade: 'B', batch: 'TC20260617-010' },
-  { x: 1255, y: 87.2, z: 358, grade: 'D', batch: 'TC20260617-011' },
-  { x: 1225, y: 97.2, z: 312, grade: 'A', batch: 'TC20260617-012' },
-  { x: 1208, y: 95.8, z: 298, grade: 'A', batch: 'TC20260617-013' },
-  { x: 1240, y: 94.5, z: 335, grade: 'B', batch: 'TC20260617-014' },
-  { x: 1192, y: 90.8, z: 282, grade: 'C', batch: 'TC20260617-015' },
-  { x: 1218, y: 96.5, z: 305, grade: 'A', batch: 'TC20260617-016' },
-  { x: 1232, y: 92.8, z: 322, grade: 'B', batch: 'TC20260617-017' },
-  { x: 1250, y: 88.5, z: 348, grade: 'D', batch: 'TC20260617-018' },
-  { x: 1202, y: 95.2, z: 292, grade: 'A', batch: 'TC20260617-019' },
-  { x: 1222, y: 97.8, z: 310, grade: 'A', batch: 'TC20260617-020' },
-  { x: 1248, y: 90.2, z: 345, grade: 'C', batch: 'TC20260617-021' },
-  { x: 1212, y: 96.0, z: 296, grade: 'A', batch: 'TC20260617-022' },
-  { x: 1195, y: 93.8, z: 286, grade: 'B', batch: 'TC20260617-023' },
-  { x: 1230, y: 94.2, z: 320, grade: 'B', batch: 'TC20260617-024' },
-  { x: 1258, y: 85.8, z: 362, grade: 'D', batch: 'TC20260617-025' },
+const rawScatterData: ScatterPoint[] = [
+  { x: 1195, y: 96.2, z: 285, grade: 'A', batch: 'TC20260617-001', spec: '800×800', processType: '中温标准', daysAgo: 0 },
+  { x: 1210, y: 97.5, z: 295, grade: 'A', batch: 'TC20260617-002', spec: '600×1200', processType: '高温长周期', daysAgo: 1 },
+  { x: 1205, y: 94.8, z: 302, grade: 'B', batch: 'TC20260617-003', spec: '600×600', processType: '低温快烧', daysAgo: 0 },
+  { x: 1220, y: 98.1, z: 308, grade: 'A', batch: 'TC20260617-004', spec: '750×1500', processType: '中温标准', daysAgo: 2 },
+  { x: 1188, y: 89.5, z: 278, grade: 'C', batch: 'TC20260617-005', spec: '800×800', processType: '低温快烧', daysAgo: 1 },
+  { x: 1235, y: 95.6, z: 325, grade: 'A', batch: 'TC20260617-006', spec: '600×1200', processType: '高温长周期', daysAgo: 3 },
+  { x: 1228, y: 93.2, z: 318, grade: 'B', batch: 'TC20260617-007', spec: '600×600', processType: '中温标准', daysAgo: 2 },
+  { x: 1245, y: 91.8, z: 342, grade: 'C', batch: 'TC20260617-008', spec: '750×1500', processType: '高温长周期', daysAgo: 4 },
+  { x: 1215, y: 96.8, z: 300, grade: 'A', batch: 'TC20260617-009', spec: '800×800', processType: '中温标准', daysAgo: 3 },
+  { x: 1198, y: 92.5, z: 288, grade: 'B', batch: 'TC20260617-010', spec: '600×1200', processType: '低温快烧', daysAgo: 5 },
+  { x: 1255, y: 87.2, z: 358, grade: 'D', batch: 'TC20260617-011', spec: '600×600', processType: '高温长周期', daysAgo: 2 },
+  { x: 1225, y: 97.2, z: 312, grade: 'A', batch: 'TC20260617-012', spec: '750×1500', processType: '中温标准', daysAgo: 6 },
+  { x: 1208, y: 95.8, z: 298, grade: 'A', batch: 'TC20260617-013', spec: '800×800', processType: '低温快烧', daysAgo: 4 },
+  { x: 1240, y: 94.5, z: 335, grade: 'B', batch: 'TC20260617-014', spec: '600×1200', processType: '高温长周期', daysAgo: 7 },
+  { x: 1192, y: 90.8, z: 282, grade: 'C', batch: 'TC20260617-015', spec: '600×600', processType: '低温快烧', daysAgo: 5 },
+  { x: 1218, y: 96.5, z: 305, grade: 'A', batch: 'TC20260617-016', spec: '750×1500', processType: '中温标准', daysAgo: 8 },
+  { x: 1232, y: 92.8, z: 322, grade: 'B', batch: 'TC20260617-017', spec: '800×800', processType: '高温长周期', daysAgo: 6 },
+  { x: 1250, y: 88.5, z: 348, grade: 'D', batch: 'TC20260617-018', spec: '600×1200', processType: '高温长周期', daysAgo: 9 },
+  { x: 1202, y: 95.2, z: 292, grade: 'A', batch: 'TC20260617-019', spec: '600×600', processType: '低温快烧', daysAgo: 7 },
+  { x: 1222, y: 97.8, z: 310, grade: 'A', batch: 'TC20260617-020', spec: '750×1500', processType: '中温标准', daysAgo: 10 },
+  { x: 1248, y: 90.2, z: 345, grade: 'C', batch: 'TC20260617-021', spec: '800×800', processType: '高温长周期', daysAgo: 8 },
+  { x: 1212, y: 96.0, z: 296, grade: 'A', batch: 'TC20260617-022', spec: '600×1200', processType: '中温标准', daysAgo: 11 },
+  { x: 1195, y: 93.8, z: 286, grade: 'B', batch: 'TC20260617-023', spec: '600×600', processType: '低温快烧', daysAgo: 12 },
+  { x: 1230, y: 94.2, z: 320, grade: 'B', batch: 'TC20260617-024', spec: '750×1500', processType: '高温长周期', daysAgo: 13 },
+  { x: 1258, y: 85.8, z: 362, grade: 'D', batch: 'TC20260617-025', spec: '800×800', processType: '高温长周期', daysAgo: 14 },
 ];
 
 const defectContribution = [
@@ -157,10 +169,37 @@ function getLevelBadge(level: string) {
 }
 
 export default function QualityAnalysis() {
+  const [scatterData] = useState<ScatterPoint[]>(rawScatterData);
   const [timeRange, setTimeRange] = useState('近7日');
   const [productSpec, setProductSpec] = useState('全部');
   const [selectedGrades, setSelectedGrades] = useState<string[]>(['全部']);
   const [processType, setProcessType] = useState('全部');
+  const [batchSearch, setBatchSearch] = useState('');
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+
+  const filteredData = useMemo(() => {
+    return scatterData.filter((d) => {
+      if (batchSearch && !d.batch.includes(batchSearch)) return false;
+      if (timeRange === '今日' && d.daysAgo > 1) return false;
+      if (timeRange === '近7日' && d.daysAgo > 7) return false;
+      if (productSpec !== '全部' && d.spec !== productSpec) return false;
+      if (!selectedGrades.includes('全部') && !selectedGrades.includes(d.grade)) return false;
+      if (processType !== '全部' && d.processType !== processType) return false;
+      return true;
+    });
+  }, [scatterData, timeRange, productSpec, selectedGrades, processType, batchSearch]);
+
+  const kpiValues = useMemo(() => {
+    if (filteredData.length === 0) {
+      return { avgPass: '0.0', aRate: '0.0', avgEnergy: '0', anomalyCount: '0' };
+    }
+    const avgPass = (filteredData.reduce((s, d) => s + d.y, 0) / filteredData.length).toFixed(1);
+    const aCount = filteredData.filter((d) => d.grade === 'A').length;
+    const aRate = ((aCount / filteredData.length) * 100).toFixed(1);
+    const avgEnergy = (filteredData.reduce((s, d) => s + d.z, 0) / filteredData.length).toFixed(0);
+    const anomalyCount = filteredData.filter((d) => d.grade === 'C' || d.grade === 'D' || d.y < 92).length;
+    return { avgPass, aRate, avgEnergy, anomalyCount: String(anomalyCount) };
+  }, [filteredData]);
 
   const toggleGrade = (grade: string) => {
     if (grade === '全部') {
@@ -177,8 +216,8 @@ export default function QualityAnalysis() {
   };
 
   const handleExport = () => {
-    const headers = ['批次号', '最高温度(℃)', '合格率(%)', '能耗(kcal/kg)', '等级'];
-    const rows = scatterData.map((d) => [d.batch, d.x, d.y, d.z, d.grade]);
+    const headers = ['批次号', '最高温度(℃)', '合格率(%)', '能耗(kcal/kg)', '等级', '产品规格', '工艺类型', '距今天数'];
+    const rows = filteredData.map((d) => [d.batch, d.x, d.y, d.z, d.grade, d.spec, d.processType, d.daysAgo]);
     const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -187,6 +226,13 @@ export default function QualityAnalysis() {
     a.download = `质量关联分析_${new Date().toLocaleDateString()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const getBatchDetail = (batch: string) => {
+    const scatterItem = scatterData.find((d) => d.batch === batch);
+    const kilnRec = kilnFiringRecords.find((r) => r.batchNo === batch);
+    const gradingRec = gradingRecords.find((r) => r.batchNo === batch);
+    return { scatterItem, kilnRec, gradingRec };
   };
 
   return (
@@ -273,13 +319,26 @@ export default function QualityAnalysis() {
             </select>
           </div>
         </div>
+        <div className="mt-4">
+          <label className="text-xs font-medium text-industrial-500 mb-2 block">批次号筛选</label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-industrial-400" />
+            <input
+              type="text"
+              placeholder="输入批次号，如 B20260617-0003"
+              value={batchSearch}
+              onChange={(e) => setBatchSearch(e.target.value)}
+              className="input-field !w-full !pl-8 !py-2 text-sm"
+            />
+          </div>
+        </div>
       </div>
 
       {/* KPI 卡片 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <StatCard
           title="综合合格率"
-          value="94.8"
+          value={kpiValues.avgPass}
           unit="%"
           icon={<Gauge className="w-6 h-6" />}
           change={1.5}
@@ -288,7 +347,7 @@ export default function QualityAnalysis() {
         />
         <StatCard
           title="A品率"
-          value="72.3"
+          value={kpiValues.aRate}
           unit="%"
           icon={<Award className="w-6 h-6" />}
           change={2.8}
@@ -297,7 +356,7 @@ export default function QualityAnalysis() {
         />
         <StatCard
           title="单位能耗"
-          value="312"
+          value={kpiValues.avgEnergy}
           unit="kcal/kg"
           icon={<Flame className="w-6 h-6" />}
           change={-1.8}
@@ -306,7 +365,7 @@ export default function QualityAnalysis() {
         />
         <StatCard
           title="关联异常点"
-          value="8"
+          value={kpiValues.anomalyCount}
           unit="处"
           icon={<AlertTriangle className="w-6 h-6" />}
           changeLabel="需重点关注"
@@ -322,7 +381,7 @@ export default function QualityAnalysis() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-display text-lg font-semibold text-industrial-900">烧成温度 vs 合格率</h3>
-              <p className="text-xs text-industrial-500 mt-0.5">点大小代表能耗，颜色代表等级</p>
+              <p className="text-xs text-industrial-500 mt-0.5">点大小代表能耗，颜色代表等级，点击查看批次详情</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /><span className="text-[11px] text-industrial-500">A品</span></div>
@@ -341,7 +400,7 @@ export default function QualityAnalysis() {
                   cursor={{ strokeDasharray: '3 3' }}
                   content={({ payload }) => {
                     if (!payload || payload.length === 0) return null;
-                    const d = payload[0].payload as typeof scatterData[0];
+                    const d = payload[0].payload as ScatterPoint;
                     return (
                       <div className="bg-white border border-industrial-200 rounded-lg shadow-lg p-3">
                         <div className="font-mono text-xs font-semibold text-kiln-600 mb-2">{d.batch}</div>
@@ -355,14 +414,67 @@ export default function QualityAnalysis() {
                     );
                   }}
                 />
-                <Scatter data={scatterData}>
-                  {scatterData.map((entry, index) => (
-                    <Cell key={index} fill={getGradeColor(entry.grade)} fillOpacity={0.8} />
+                <Scatter
+                  data={filteredData}
+                  onClick={(data: ScatterPoint) => {
+                    if (data && data.batch) {
+                      setExpandedBatch(expandedBatch === data.batch ? null : data.batch);
+                    }
+                  }}
+                >
+                  {filteredData.map((entry, index) => (
+                    <Cell key={index} fill={getGradeColor(entry.grade)} fillOpacity={expandedBatch === entry.batch ? 1 : 0.8} stroke={expandedBatch === entry.batch ? '#1A1D21' : 'none'} strokeWidth={expandedBatch === entry.batch ? 2 : 0} style={{ cursor: 'pointer' }} />
                   ))}
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
           </div>
+          {expandedBatch && (() => {
+            const { scatterItem, kilnRec, gradingRec } = getBatchDetail(expandedBatch);
+            if (!scatterItem) return null;
+            const gradeBadgeClass = scatterItem.grade === 'A' ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+              : scatterItem.grade === 'B' ? 'bg-blue-100 text-blue-700 border-blue-200'
+              : scatterItem.grade === 'C' ? 'bg-gray-100 text-gray-700 border-gray-200'
+              : 'bg-rose-100 text-rose-700 border-rose-200';
+            return (
+              <div className="mt-4 pt-4 border-t border-industrial-100">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm font-bold text-kiln-600">{expandedBatch}</span>
+                    <span className={`badge border text-[10px] font-semibold ${gradeBadgeClass}`}>{scatterItem.grade}品</span>
+                  </div>
+                  <button
+                    onClick={() => setExpandedBatch(null)}
+                    className="p-1 rounded-md hover:bg-industrial-100 text-industrial-400 hover:text-industrial-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-industrial-50/50 border border-industrial-100 p-3">
+                    <div className="text-[11px] font-semibold text-industrial-700 mb-2">烧成参数</div>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex justify-between"><span className="text-industrial-500">最高温度</span><span className="font-semibold text-industrial-800">{kilnRec ? kilnRec.maxTemp.toFixed(1) : scatterItem.x}℃</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">窑速</span><span className="font-semibold text-industrial-800">{kilnRec ? kilnRec.kilnSpeed.toFixed(2) : (9.5 + (scatterItem.x - 1200) * 0.02).toFixed(2)} m/min</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">周期</span><span className="font-semibold text-industrial-800">{kilnRec ? kilnRec.totalFiringTime.toFixed(0) : (62 + (scatterItem.x - 1200) * 0.15).toFixed(0)} min</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">氧含量</span><span className="font-semibold text-industrial-800">{kilnRec ? kilnRec.oxygenLevel.toFixed(1) : (2.5 + (1250 - scatterItem.x) * 0.03).toFixed(1)}%</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">能耗</span><span className="font-semibold text-industrial-800">{scatterItem.z} kcal/kg</span></div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-industrial-50/50 border border-industrial-100 p-3">
+                    <div className="text-[11px] font-semibold text-industrial-700 mb-2">分级结果</div>
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex justify-between"><span className="text-industrial-500">平整度</span><span className="font-semibold text-industrial-800">{gradingRec ? gradingRec.flatness.toFixed(3) : (0.1 + (98 - scatterItem.y) * 0.01).toFixed(3)} mm</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">直角度</span><span className="font-semibold text-industrial-800">{gradingRec ? gradingRec.squareness.toFixed(3) : (0.15 + (98 - scatterItem.y) * 0.012).toFixed(3)} mm</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">色差ΔE</span><span className="font-semibold text-industrial-800">{gradingRec ? gradingRec.colorDifference.toFixed(2) : (0.4 + (98 - scatterItem.y) * 0.08).toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">色号</span><span className="font-semibold text-industrial-800 font-mono">{gradingRec ? gradingRec.colorNo : 'C' + (100 + parseInt(scatterItem.batch.slice(-3)) % 20)}</span></div>
+                      <div className="flex justify-between"><span className="text-industrial-500">数量</span><span className="font-semibold text-industrial-800">{gradingRec ? gradingRec.quantity : 600 + (parseInt(scatterItem.batch.slice(-3)) % 400)} 片</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 图表2: 气泡矩阵 */}

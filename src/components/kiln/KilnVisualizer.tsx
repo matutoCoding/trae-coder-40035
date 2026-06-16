@@ -21,11 +21,25 @@ interface KilnVisualizerProps {
   onReset?: () => void;
 }
 
-const defaultMaxTemp = 1230;
-const defaultKilnSpeed = 9.6;
-const defaultOxygen = 3.2;
-const defaultFiringTime = 62.5;
-const defaultAirFuel = 10.8;
+export const defaultMaxTemp = 1230;
+export const defaultKilnSpeed = 9.6;
+export const defaultOxygen = 3.2;
+export const defaultFiringTime = 62.5;
+export const defaultAirFuel = 10.8;
+
+export function calcEnergyIndex(
+  t: number,
+  ft: number,
+  ks: number,
+  afr: number
+) {
+  return (
+    (t / 1230) * 0.35 +
+    (ft / 62.5) * 0.4 +
+    (ks / 9.6) * 0.15 +
+    (1 / afr) * 8.64
+  );
+}
 
 function tempToColor(temp: number, type: string): string {
   if (type === 'preheat') {
@@ -43,7 +57,7 @@ function tempToColor(temp: number, type: string): string {
   return 'from-cyan-400 to-blue-400';
 }
 
-function seedRand(seed: number): () => number {
+export function seedRand(seed: number): () => number {
   let t = seed >>> 0;
   return function () {
     t = (t + 0x6D2B79F5) >>> 0;
@@ -54,7 +68,7 @@ function seedRand(seed: number): () => number {
   };
 }
 
-function calcZoneTemps(
+export function calcZoneTemps(
   maxTemp: number,
   kilnSpeed: number,
   oxygenLevel: number,
@@ -139,12 +153,13 @@ export default function KilnVisualizer({
 
   const actualMax = Math.max(...zones.map((z) => z.actual));
 
-  const energyBase = 3.2;
-  const energyIndex =
-    (maxTemp / 1230) * 0.35 +
-    (firingTime / 62.5) * 0.4 +
-    (kilnSpeed / 9.6) * 0.15 +
-    (1 / airFuelRatio) * 8.64;
+  const energyBase = calcEnergyIndex(
+    defaultMaxTemp,
+    defaultFiringTime,
+    defaultKilnSpeed,
+    defaultAirFuel
+  );
+  const energyIndex = calcEnergyIndex(maxTemp, firingTime, kilnSpeed, airFuelRatio);
   const energyDelta = ((energyIndex - energyBase) / energyBase) * 100;
 
   const isDifferent =

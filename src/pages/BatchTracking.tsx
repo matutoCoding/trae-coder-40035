@@ -18,7 +18,10 @@ import {
   Activity,
   X,
   Info,
+  BarChart3,
+  Link2,
 } from 'lucide-react';
+import { useAppStore } from '@/store/productionStore';
 import {
   ballMillingRecords,
   sprayDryingRecords,
@@ -40,6 +43,22 @@ interface ProcessStep {
   operator?: string;
   params: { label: string; value: string }[];
   abnormalities?: { level: 'warning' | 'critical'; message: string }[];
+}
+
+interface ChainNode {
+  key: string;
+  name: string;
+  time: string;
+  icon: typeof FlaskConical;
+  iconColor: string;
+  iconBg: string;
+  isAbnormal: boolean;
+  abnormalLevel: 'warning' | 'critical' | null;
+  content: string;
+  isKey?: boolean;
+  isResult?: boolean;
+  grade?: string;
+  isOverTemp?: boolean;
 }
 
 const processStages = [
@@ -254,6 +273,7 @@ export default function BatchTracking() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBatch, setSelectedBatch] = useState<string>(completeBatches[0] || allBatches[0] || '');
   const [highlightStep, setHighlightStep] = useState<string | null>(null);
+  const setActiveModule = useAppStore((s) => s.setActiveModule);
 
   const filteredBatches = useMemo(() => {
     if (!searchTerm) return allBatches;
@@ -264,6 +284,192 @@ export default function BatchTracking() {
 
   const completedCount = processSteps.filter((s) => s.status === 'completed').length;
   const abnormalCount = processSteps.filter((s) => s.abnormalities && s.abnormalities.length > 0).length;
+
+  const currentBatchGrade = useMemo(() => {
+    return gradingRecords.find((g) => g.batchNo === selectedBatch);
+  }, [selectedBatch]);
+
+  const showQualityChain = useMemo(() => {
+    const hasNonAGrade = currentBatchGrade && currentBatchGrade.grade !== 'A';
+    const hasAbnormal = processSteps.some((s) => s.abnormalities && s.abnormalities.length > 0);
+    return !!(hasNonAGrade || hasAbnormal);
+  }, [currentBatchGrade, processSteps]);
+
+  const chainNodes = useMemo((): ChainNode[] => {
+    const ball = ballMillingRecords.find((r) => r.batchNo === selectedBatch);
+    const spray = sprayDryingRecords.find((r) => r.batchNo === selectedBatch);
+    const press = pressFormingRecords.find((r) => r.batchNo === selectedBatch);
+    const glaze = glazingRecords.find((r) => r.batchNo === selectedBatch);
+    const kiln = kilnFiringRecords.find((r) => r.batchNo === selectedBatch);
+    const polish = polishingRecords.find((r) => r.batchNo === selectedBatch);
+    const grade = gradingRecords.find((r) => r.batchNo === selectedBatch);
+
+    const nodes = [];
+
+    if (ball) {
+      const isAbnormal = ball.fineness > 1.8;
+      nodes.push({
+        key: 'ball-milling',
+        name: '球磨工序',
+        time: ball.timestamp,
+        icon: FlaskConical,
+        iconColor: 'text-blue-600',
+        iconBg: 'bg-blue-500',
+        isAbnormal,
+        abnormalLevel: isAbnormal ? 'warning' as const : null,
+        content: isAbnormal
+          ? `出磨细度偏高：${ball.fineness.toFixed(2)}%（标准≤1.8%）`
+          : `细度合格：${ball.fineness.toFixed(2)}%`,
+      });
+    }
+
+    if (spray) {
+      const isAbnormal = spray.outletTemp < 85 || spray.powderMoisture > 7;
+      let content = `出口温度 ${spray.outletTemp}℃，粉料水分 ${spray.powderMoisture.toFixed(1)}%`;
+      if (spray.outletTemp < 85) content = `出口温度偏低 ${spray.outletTemp}℃，粉料水分上升`;
+      if (spray.powderMoisture > 7) content = `粉料水分偏高 ${spray.powderMoisture.toFixed(1)}%`;
+      nodes.push({
+        key: 'spray-drying',
+        name: '喷雾干燥',
+        time: spray.timestamp,
+        icon: CloudRain,
+        iconColor: 'text-cyan-600',
+        iconBg: 'bg-cyan-500',
+        isAbnormal,
+        abnormalLevel: isAbnormal ? 'warning' as const : null,
+        content,
+      });
+    }
+
+    if (press) {
+      let isAbnormal = false;
+      let abnormalLevel: 'warning' | 'critical' | null = null;
+      let content = `缺陷率 ${press.defectRate.toFixed(2)}%`;
+      if (press.defectRate > 2.5) {
+        isAbnormal = true;
+        abnormalLevel = 'critical';
+        content = `缺陷率超标：${press.defectRate.toFixed(2)}%（阈值2.5%）`;
+      } else if (press.defectRate > 1.8) {
+        isAbnormal = true;
+        abnormalLevel = 'warning';
+        content = `缺陷率接近上限：${press.defectRate.toFixed(2)}%`;
+      }
+      nodes.push({
+        key: 'press-forming',
+        name: '压制成型',
+        time: press.timestamp,
+        icon: Hammer,
+        iconColor: 'text-amber-600',
+        iconBg: 'bg-amber-500',
+        isAbnormal,
+        abnormalLevel,
+        content,
+      });
+    }
+
+    if (glaze) {
+      nodes.push({
+        key: 'glazing',
+        name: '干燥施釉',
+        time: glaze.timestamp,
+        icon: PaintBucket,
+        iconColor: 'text-teal-600',
+        iconBg: 'bg-teal-500',
+        isAbnormal: false,
+        abnormalLevel: null,
+        content: `施釉量 ${glaze.glazeAmount}g/㎡，釉浆比重 ${glaze.glazeDensity.toFixed(2)}`,
+      });
+    }
+
+    if (kiln) {
+      const isOverTemp = kiln.maxTemp > 1240;
+      nodes.push({
+        key: 'kiln-firing',
+        name: '辊道窑烧成',
+        time: kiln.timestamp,
+        icon: Flame,
+        iconColor: 'text-kiln-600',
+        iconBg: 'bg-kiln-500',
+        isAbnormal: isOverTemp,
+        abnormalLevel: isOverTemp ? 'critical' as const : null,
+        isKey: true,
+        content: `最高温度 ${kiln.maxTemp}℃${isOverTemp ? '（超温！）' : ''}，窑速 ${kiln.kilnSpeed.toFixed(1)}m/min，烧成周期 ${kiln.totalFiringTime.toFixed(1)}min，氧含量 ${kiln.oxygenLevel.toFixed(1)}%，合格率 ${kiln.passRate?.toFixed(1) ?? '-'}%`,
+        isOverTemp,
+      });
+    }
+
+    if (polish) {
+      nodes.push({
+        key: 'polishing',
+        name: '抛光磨边',
+        time: polish.timestamp,
+        icon: Sparkles,
+        iconColor: 'text-violet-600',
+        iconBg: 'bg-violet-500',
+        isAbnormal: false,
+        abnormalLevel: null,
+        content: `光泽度 ${polish.glossiness.toFixed(1)}%，平面度 ${polish.surfaceFlatness.toFixed(2)}mm`,
+      });
+    }
+
+    if (grade) {
+      const isNonA = grade.grade !== 'A';
+      nodes.push({
+        key: 'grading',
+        name: '分级包装',
+        time: grade.timestamp,
+        icon: Boxes,
+        iconColor: 'text-emerald-600',
+        iconBg: 'bg-emerald-500',
+        isAbnormal: isNonA,
+        abnormalLevel: isNonA ? (grade.grade === 'D' ? 'critical' as const : 'warning' as const) : null,
+        isKey: true,
+        isResult: true,
+        grade: grade.grade,
+        content: `定级${getGradeLabel(grade.grade)}，色差ΔE=${grade.colorDifference.toFixed(2)}，平整度 ${grade.flatness.toFixed(2)}mm，直角度 ${grade.squareness.toFixed(2)}mm`,
+      });
+    }
+
+    return nodes;
+  }, [selectedBatch]);
+
+  const chainConclusion = useMemo(() => {
+    const parts: string[] = [];
+    const factors: string[] = [];
+
+    const ball = ballMillingRecords.find((r) => r.batchNo === selectedBatch);
+    const press = pressFormingRecords.find((r) => r.batchNo === selectedBatch);
+    const kiln = kilnFiringRecords.find((r) => r.batchNo === selectedBatch);
+    const grade = gradingRecords.find((r) => r.batchNo === selectedBatch);
+
+    if (ball && ball.fineness > 1.8) {
+      parts.push(`球磨细度偏高${ball.fineness.toFixed(2)}%`);
+      factors.push('前序球磨细度波动');
+    }
+    if (press && press.defectRate > 1.8) {
+      parts.push(`压制缺陷率${press.defectRate.toFixed(2)}%`);
+      if (press.defectRate > 2.5) factors.push('压制成型缺陷率超标');
+    }
+    if (kiln && kiln.maxTemp > 1240) {
+      parts.push(`烧成超温${kiln.maxTemp}℃`);
+      factors.push('烧成温度偏高');
+    }
+    if (grade) {
+      parts.push(`最终定级${getGradeLabel(grade.grade)}，色差ΔE=${grade.colorDifference.toFixed(2)}`);
+    }
+
+    let conclusion = '';
+    if (parts.length > 0) {
+      conclusion = '该批次' + parts.join(' → ');
+      if (factors.length > 0) {
+        conclusion += `。主要影响因素为${factors.map((f, i) => i === 0 ? `**${f}**` : `**${f}**`).join('和')}，建议加强前序工序参数监控及窑炉温度稳定性管控。`;
+      }
+    } else {
+      conclusion = '该批次整体工艺参数正常，建议持续关注。';
+    }
+
+    return conclusion;
+  }, [selectedBatch]);
 
   const StatusIcon = ({ status }: { status: ProcessStep['status'] }) => {
     if (status === 'completed') return <CheckCircle2 className="w-5 h-5 text-emerald-500" />;
@@ -619,6 +825,138 @@ export default function BatchTracking() {
               </div>
             </div>
           </div>
+
+          {/* 质量影响链路 */}
+          {showQualityChain && (
+            <div className="card p-5">
+              <div className="flex items-start justify-between flex-wrap gap-4 mb-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-kiln-500 to-gold-500 flex items-center justify-center text-white shadow-md flex-shrink-0">
+                    <Link2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-lg font-semibold text-industrial-900">质量影响链路分析</h3>
+                    <p className="text-xs text-industrial-500 mt-1">展示该批次从前序异常→烧成参数→分级结果的完整传导路径</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveModule('quality-analysis')}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-r from-kiln-500 to-gold-500 text-white text-sm font-medium shadow-sm hover:shadow-md hover:from-kiln-600 hover:to-gold-600 transition-all"
+                >
+                  <BarChart3 className="w-4 h-4" />
+                  跳转质量分析
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="relative pl-2">
+                {chainNodes.map((node, idx) => {
+                  const NodeIcon = node.icon;
+                  const isLast = idx === chainNodes.length - 1;
+                  return (
+                    <div key={node.key} className="relative flex gap-4 pb-6">
+                      {!isLast && (
+                        <div className="absolute left-[22px] top-11 bottom-0 w-0.5 bg-gradient-to-b from-industrial-200 to-industrial-100 z-0">
+                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-industrial-300" />
+                        </div>
+                      )}
+
+                      <div className="relative z-10 flex-shrink-0">
+                        <div
+                          className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm ${
+                            node.isKey
+                              ? 'bg-gradient-to-br from-kiln-500 to-gold-500 text-white ring-2 ring-gold-300 ring-offset-2'
+                              : node.isAbnormal
+                              ? node.abnormalLevel === 'critical'
+                                ? 'bg-rose-500 text-white ring-2 ring-rose-300 ring-offset-2'
+                                : 'bg-amber-500 text-white ring-2 ring-amber-300 ring-offset-2'
+                              : `${node.iconBg} text-white`
+                          }`}
+                        >
+                          <NodeIcon className="w-5 h-5" />
+                        </div>
+                      </div>
+
+                      <div
+                        className={`flex-1 rounded-xl p-4 ${
+                          node.isResult && node.isAbnormal
+                            ? 'bg-gradient-to-r from-rose-50 to-rose-100/50 border border-rose-200'
+                            : node.isKey
+                            ? 'bg-gradient-to-r from-kiln-50 to-gold-50 border border-gold-200'
+                            : node.isAbnormal
+                            ? node.abnormalLevel === 'critical'
+                              ? 'bg-rose-50 border border-rose-200'
+                              : 'bg-amber-50 border border-amber-200'
+                            : 'bg-industrial-50 border border-industrial-100'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`font-semibold ${
+                                node.isKey ? 'text-kiln-700' : node.isAbnormal ? (node.abnormalLevel === 'critical' ? 'text-rose-700' : 'text-amber-700') : 'text-industrial-800'
+                              }`}
+                            >
+                              {node.name}
+                            </span>
+                            {node.isKey && (
+                              <span className="badge bg-gold-100 text-gold-700 border border-gold-200 text-[10px]">
+                                关键节点
+                              </span>
+                            )}
+                            {node.isAbnormal && node.abnormalLevel && (
+                              <span
+                                className={`badge text-[10px] ${
+                                  node.abnormalLevel === 'critical'
+                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                    : 'bg-amber-100 text-amber-700 border border-amber-200'
+                                }`}
+                              >
+                                {node.abnormalLevel === 'critical' ? 'CRITICAL' : 'WARNING'}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-industrial-500 font-mono">{node.time}</span>
+                        </div>
+                        <div
+                          className={`mt-2 text-sm ${
+                            node.isOverTemp
+                              ? 'text-rose-600 font-semibold'
+                              : node.isKey
+                              ? 'text-kiln-700'
+                              : node.isAbnormal
+                              ? node.abnormalLevel === 'critical'
+                                ? 'text-rose-700 font-semibold'
+                                : 'text-amber-700 font-medium'
+                              : 'text-industrial-700'
+                          }`}
+                        >
+                          {node.content}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 p-4 rounded-xl bg-gradient-to-r from-kiln-50 via-gold-50 to-amber-50 border border-gold-200">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-gold-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-industrial-700 leading-relaxed">
+                    {chainConclusion.split('**').map((part, i) =>
+                      i % 2 === 1 ? (
+                        <span key={i} className="font-semibold text-kiln-700">
+                          {part}
+                        </span>
+                      ) : (
+                        <span key={i}>{part}</span>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
